@@ -1,6 +1,9 @@
-.PHONY: all
+.PHONY: all clean
 
-all: bin/hp4
+all: clean bin/hp4
+
+clean:
+	rm -r bin || true
 
 bin:
 	mkdir -p bin
