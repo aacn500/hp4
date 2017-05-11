@@ -29,18 +29,6 @@ Pipe* pipe_new(void) {
         return NULL;
     }
 
-    // set pipe fds non-blocking
-    int i;
-    for (i = 0; i < 2; i++) {
-        int flags = fcntl(fds[i], F_GETFL);
-        if (flags < 0) {
-            return NULL;
-        }
-        if (fcntl(fds[i], F_SETFL, flags|O_NONBLOCK) < 0) {
-            return NULL;
-        }
-    }
-
     new_pipe->read_fd = fds[0];
     new_pipe->write_fd = fds[1];
     return new_pipe;
@@ -50,28 +38,10 @@ int close_pipe(Pipe* pipe_to_close) {
     return close(pipe_to_close->read_fd) | close(pipe_to_close->write_fd);
 }
 
-/*
- * Open a pipe; print name of write end to stdout, then epoll read end until
- * sigint, echoing data to stdout.
- */
-int main(int argc, char** argv) {
-    fprintf(stderr, "Hi\n");
-    Pipe* in_pipe = pipe_new();
-    Pipe* out_pipe = pipe_new();
-    if (in_pipe == NULL || out_pipe == NULL) {
-        perror("pipe_new");
-        return 1;
-    }
-
-    int my_pid = getpid();
-
+int run(Pipe **pipes) {
     signal(SIGINT, handle_sigint);
+    fprintf(stderr, "Hi\n");
 
-    fprintf(stderr, "Write to fd /proc/%d/fd/%d and", my_pid, in_pipe->write_fd);
-    fprintf(stderr, " read from fd /proc/%d/fd/%d\n", my_pid, out_pipe->read_fd);
-
-    // epolling written with inspiration from
-    // https://banu.com/blog/2/how-to-use-epoll-a-complete-example-in-c/
     struct epoll_event event;
     struct epoll_event events[3];
 
@@ -81,29 +51,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    event.data.fd = in_pipe->read_fd;
+    event.data.fd = pipes[0]->read_fd;
     event.events = EPOLLIN;
 
-    if (epoll_ctl(efd, EPOLL_CTL_ADD, in_pipe->read_fd, &event) < 0) {
+    if (epoll_ctl(efd, EPOLL_CTL_ADD, pipes[0]->read_fd, &event) < 0) {
         perror("epoll_ctl");
         return 1;
     }
 
-    long bytes_passed = 0l;
+    int bytes_passed = 0;
 
     while(!stop) {
         int n = epoll_wait(efd, events, 3, -1);
         for (int i = 0; i < n; i++) {
-            if ((events[i].events & EPOLLERR) ||
-                    (events[i].events & EPOLLHUP) ||
+            if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP) ||
                     (!(events[i].events & EPOLLIN))) {
                 fprintf(stderr, "epoll error\n");
                 close(events[i].data.fd);
                 continue;
             }
-            else if (in_pipe->read_fd == events[i].data.fd) {
-                ssize_t bytes_spliced = splice(in_pipe->read_fd, NULL,
-                       out_pipe->write_fd, NULL, 1024, SPLICE_F_NONBLOCK);
+            else if (pipes[0]->read_fd == events[i].data.fd) {
+                ssize_t bytes_spliced = splice(pipes[0]->read_fd, NULL,
+                       pipes[1]->write_fd, NULL, 4096, SPLICE_F_NONBLOCK);
                 if (bytes_spliced < 0) {
                     if (errno & EAGAIN) {
                         errno = 0;
@@ -114,20 +83,63 @@ int main(int argc, char** argv) {
                         return 1;
                     }
                 }
-                bytes_passed += (long)bytes_spliced;
+                bytes_passed += bytes_spliced;
             }
         }
     }
+    return bytes_passed;
+}
 
-    if (close_pipe(in_pipe) || close_pipe(out_pipe)) {
-        perror("close_pipe");
+int main(int argc, char** argv) {
+    Pipe *pipes[2] = {pipe_new(), pipe_new()};
+    pid_t pids[2];
+    pids[0] = fork();
+    if (pids[0] == 0) { // child
+        // set stdin to pipes[1]->read_fd, exec cat
+        if (dup2(pipes[1]->read_fd, STDIN_FILENO) < 0) {
+            perror("dup2");
+            return 1;
+        }
+        char* args[2] = {"cat", NULL};
+        execvp(args[0], args);
+    } else if (pids[0] < 0) { // err
+        perror("fork");
         return 1;
+    } else {
+        pids[1] = fork();
+        if (pids[1] < 0) {
+            perror("fork v2");
+            return 1;
+        } else if (pids[1] == 0) {
+            if (dup2(pipes[0]->write_fd, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                return 1;
+            }
+            char* args[3] = {"echo", "Hi! I'm a string!", NULL};
+            execvp(args[0], args);
+        } else {
+            int bytes_spliced = run(pipes);
+            if (bytes_spliced < 0) {
+                perror("run");
+                return 1;
+            }
+            for (int i = 0; i < sizeof(pids)/sizeof(pids[0]); i++) {
+                if (kill(pids[i], SIGINT) < 0) {
+                    perror("kill");
+                    return 1;
+                }
+            }
+            if (close_pipe(pipes[0]) || close_pipe(pipes[1])) {
+                perror("close_pipe");
+                return 1;
+            }
+            fprintf(stderr, "Read and wrote %d bytes\n", bytes_spliced);
+            free(pipes[0]);
+            pipes[0] = NULL;
+            free(pipes[1]);
+            pipes[1] = NULL;
+            fprintf(stderr, "\b\bBye\n");
+            return 0;
+        }
     }
-    fprintf(stderr, "Read and wrote %ld bytes\n", bytes_passed);
-    free(in_pipe);
-    in_pipe = NULL;
-    free(out_pipe);
-    out_pipe = NULL;
-    fprintf(stderr, "Bye\n");
-    return 0;
 }
