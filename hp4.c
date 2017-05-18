@@ -11,6 +11,8 @@
 
 #include <event2/event.h>
 
+#include "parser.h"
+
 typedef struct Pipe {
     int read_fd;
     int write_fd;
@@ -144,6 +146,28 @@ int run(Pipe **pipes, pid_t* pids) {
 }
 
 int main(int argc, char **argv) {
+    if (argc != 2) {
+        fprintf(stderr, "specify json filename\n");
+        return 1;
+    }
+
+    struct p4_file *pf = p4_file_new(argv[1]);
+
+    if (pf == NULL) {
+        return 1;
+    }
+
+    for (int i=0; i < pf->n_nodes; i++) {
+        struct p4_node *pn = &pf->nodes[i];
+        printf("%d: %s, %s, %s\n", i, pn->id, pn->type, pn->cmd);
+    }
+
+    free_p4_file(pf);
+
+    return 0;
+}
+
+int oldmain(int argc, char **argv) {
     Pipe *pipes[2] = {pipe_new(), pipe_new()};
     pid_t pids[2];
     pids[0] = fork();
@@ -195,4 +219,5 @@ int main(int argc, char **argv) {
             return 0;
         }
     }
+    return 0;
 }

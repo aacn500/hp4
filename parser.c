@@ -8,26 +8,7 @@
 
 #include <jansson.h>
 
-struct p4_file {
-    int n_nodes;
-    int n_edges;
-    struct p4_node *nodes;
-    struct p4_edge *edges;
-};
-
-struct p4_edge {
-    char *id;
-    char *from;
-    char *to;
-};
-
-struct p4_node {
-    char *id;
-    char *cmd;
-    char *type;
-    char *subtype;
-    char *name;
-};
+#include "parser.h"
 
 int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
     json_incref(edge);
@@ -39,6 +20,8 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
     json_t *json_id;
     json_t *json_from;
     json_t *json_to;
+
+    // TODO all fields are compulsory
 
     if ((json_id = json_object_get(edge, "id"))) {
         parsed_edge->id = malloc((json_string_length(json_id) + 1) * sizeof(char));
@@ -100,6 +83,21 @@ struct p4_edge *p4_edges_array_new(json_t *edges) {
     return edges_array;
 }
 
+void free_p4_node(struct p4_node *pn) {
+    free(pn->id);
+    free(pn->type);
+    free(pn->subtype);
+    free(pn->cmd);
+    free(pn->name);
+}
+
+void free_p4_node_array(struct p4_node *nodes_array, int n_nodes) {
+    for (int i = 0; i < n_nodes; i++) {
+        free_p4_node(&nodes_array[i]);
+    }
+    free(nodes_array);
+}
+
 int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     json_incref(node);
     if (!json_is_object(node)) {
@@ -112,6 +110,8 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     json_t *json_subtype;
     json_t *json_cmd;
     json_t *json_name;
+
+    // TODO id and type are compulsory
 
     if ((json_id = json_object_get(node, "id"))) {
         parsed_node->id = malloc((json_string_length(json_id)+1) * sizeof(char));
@@ -151,20 +151,21 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */
-    int valid_subtype = parsed_node->subtype == NULL ||
-                        (strcmp(parsed_node->subtype, "DUMMY") == 0 &&
-                         strcmp(parsed_node->type, "RAFILE") == 0);
+    int valid_subtype = (parsed_node->subtype == NULL ||
+                         (strcmp(parsed_node->subtype, "DUMMY") == 0 &&
+                          strcmp(parsed_node->type, "RAFILE") == 0)) ? 0 : -1;
     /* cmd must be defined iff type == EXEC */
     int valid_cmd =
         ((parsed_node->cmd != NULL) == (strcmp(parsed_node->type, "EXEC") == 0)) ? 0 : -1;
     /* name must be defined iff type == *FILE */
     const char *type_suffix = strrchr(parsed_node->type, 'F');
-    int valid_name = (parsed_node->name != NULL) == (strcmp(type_suffix, "FILE") == 0) ? 0 : -1;
+    int valid_name = (parsed_node->name != NULL) == (type_suffix != NULL && strcmp(type_suffix, "FILE") == 0) ? 0 : -1;
 
     if (!(valid_subtype == 0 && valid_cmd == 0 && valid_name == 0)) {
         fprintf(stderr, "%s\n", parsed_node->cmd);
         fprintf(stderr, "subtype: %d, cmd: %d, name: %d\n", valid_subtype, valid_cmd, valid_name);
         fprintf(stderr, "node was invalid\n");
+        free_p4_node(parsed_node);
         parsed_node = NULL;
         json_decref(node);
         return -1;
@@ -172,21 +173,6 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     json_decref(node);
     return 0;
-}
-
-void free_p4_node(struct p4_node *pn) {
-    free(pn->id);
-    free(pn->type);
-    free(pn->subtype);
-    free(pn->cmd);
-    free(pn->name);
-}
-
-void free_p4_node_array(struct p4_node *nodes_array, int n_nodes) {
-    for (int i = 0; i < n_nodes; i++) {
-        free_p4_node(&nodes_array[i]);
-    }
-    free(nodes_array);
 }
 
 struct p4_node *p4_nodes_array_new(json_t *nodes) {
@@ -200,7 +186,7 @@ struct p4_node *p4_nodes_array_new(json_t *nodes) {
     struct p4_node *nodes_array = malloc(n_nodes * sizeof(*nodes_array));
 
     for (int i = 0; i < n_nodes; i++) {
-        if (parse_p4_node(json_array_get(nodes, i), &nodes_array[i]) == 0) {
+        if (parse_p4_node(json_array_get(nodes, i), &nodes_array[i]) < 0) {
             fprintf(stderr, "Failed to parse node\n");
             free(nodes_array);
             json_decref(nodes);
@@ -264,7 +250,7 @@ void free_p4_file(struct p4_file *pf) {
     free_p4_edge_array(pf->edges, pf->n_edges);
     free(pf);
 }
-
+/* Uncomment this to get a running example of parser.c
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "specify json filename\n");
@@ -272,6 +258,9 @@ int main(int argc, char **argv) {
     }
 
     struct p4_file *pf = p4_file_new(argv[1]);
+    if (pf == NULL) {
+        return 1;
+    }
 
     for (int i = 0; i < pf->n_nodes; i++) {
         struct p4_node *pn = &pf->nodes[i];
@@ -299,3 +288,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+*/

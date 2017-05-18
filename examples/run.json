@@ -1,0 +1,21 @@
+{
+    "nodes": [
+        {
+            "id": "hello",
+            "type": "EXEC",
+            "cmd": "echo \"hello\""
+        },
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat"
+        }
+    ],
+    "edges": [
+        {
+            "id": "edge",
+            "from": "hello",
+            "to": "cat"
+        }
+    ]
+}
