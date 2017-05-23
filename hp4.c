@@ -14,6 +14,12 @@
 
 #include "parser.h"
 
+#ifdef HP4_DEBUG
+#define PRINT_DEBUG(...) fprintf(stderr, __VA_ARGS__)
+#else /* HP4_DEBUG */
+#define PRINT_DEBUG(...) while(0)
+#endif /* HP4_DEBUG */
+
 int children_gone = 0;
 
 struct pipe {
@@ -39,6 +45,9 @@ struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid);
 
 struct pipe *pipe_new(void) {
     struct pipe *new_pipe = malloc(sizeof(*new_pipe));
+    if (new_pipe == NULL) {
+        return NULL;
+    }
 
     int fds[2] = {0, 0};
     if (pipe(fds) < 0) {
@@ -46,58 +55,47 @@ struct pipe *pipe_new(void) {
         return NULL;
     }
 
-#ifdef HP4_DEBUG
-    fprintf(stderr, "pipe_new {%d %d}\n", fds[0], fds[1]);
-#endif /* HP4_DEBUG */
+    PRINT_DEBUG("pipe_new {%d %d}\n", fds[0], fds[1]);
     new_pipe->read_fd = fds[0];
     new_pipe->write_fd = fds[1];
     return new_pipe;
 }
 
 int close_pipe(struct pipe *pipe_to_close) {
-#ifdef HP4_DEBUG
-    fprintf(stderr, "close_pipe {%d %d}\n", pipe_to_close->read_fd, pipe_to_close->write_fd);
-#endif /* HP4_DEBUG */
+    PRINT_DEBUG("close_pipe {%d %d}\n", pipe_to_close->read_fd, pipe_to_close->write_fd);
     return close(pipe_to_close->read_fd) | close(pipe_to_close->write_fd);
 }
 
 void sigint_handler(evutil_socket_t fd, short what, void *arg) {
-#ifdef HP4_DEBUG
-    fprintf(stderr, "\b\bHandling sigint...\n");
-#endif /* HP4_DEBUG */
+    PRINT_DEBUG("\b\bHandling sigint...\n");
     struct event_base *eb = arg;
     event_base_loopbreak(eb);
 }
 
 void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
-#ifdef HP4_DEBUG
-    fprintf(stderr, "killing child...\n");
-#endif /* HP4_DEBUG */
+    PRINT_DEBUG("killing child...\n");
     struct sigchld_args *sa = arg;
-    int *status = malloc(sizeof(*status));
+    int status;
     while (1) {
-#ifdef HP4_DEBUG
-        fprintf(stderr, "loop\n");
-#endif /* HP4_DEBUG */
-        pid_t p = waitpid(-1, status, WNOHANG);
-#ifdef HP4_DEBUG
-        fprintf(stderr, "pid %d\n", p);
-#endif /* HP4_DEBUG */
+        pid_t p = waitpid(-1, &status, WNOHANG);
         if (p == -1) {
             if (errno == EINTR) {
                 continue;
             }
+            PRINT_DEBUG("Got an unexpected error while waiting for child to terminate: %d\n", errno);
             break;
         }
         else if (p == 0) {
             break;
         }
-        else if (WIFEXITED(*status)) {
+        else if (WIFEXITED(status)) {
             children_gone++;
-#ifdef HP4_DEBUG
-            fprintf(stderr, "%d child processes ended\n", children_gone);
-#endif /* HP4_DEBUG */
+            PRINT_DEBUG("%dth child process ended\n", children_gone);
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
+            if (pn == NULL) {
+                PRINT_DEBUG("No node found with pid %u\n", p);
+                return;
+            }
             if (pn->in_pipe && close_pipe(pn->in_pipe) < 0) {
                 perror("close in pipe");
             }
@@ -109,28 +107,27 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             for (int i = 0; i < (int)pn->n_listening_edges; i++) {
                 struct p4_node *downstream = find_node_by_id(sa->pf,
                         pn->listening_edges[i]->to);
+                if (downstream == NULL) {
+                    PRINT_DEBUG("No node found with id %s\n", pn->listening_edges[i]->to);
+                    return;
+                }
                 if (downstream->in_pipe) {
+                    PRINT_DEBUG("closing in pipe for downstream\n");
 #ifdef HP4_DEBUG
-                    fprintf(stderr, "closing in pipe for downstream\n");
-                    int is_closed = close_pipe(downstream->in_pipe);
-#else
-                    close_pipe(downstream->in_pipe);
+                    int is_closed =
 #endif /* HP4_DEBUG */
+                    close_pipe(downstream->in_pipe);
+
                     free(downstream->in_pipe);
                     downstream->in_pipe = NULL;
-#ifdef HP4_DEBUG
-                    fprintf(stderr, "got %d\n", is_closed);
-#endif /* HP4_DEBUG */
+                    PRINT_DEBUG("got %d\n", is_closed);
                 }
             }
             if (children_gone == sa->pf->n_nodes) {
                 event_base_loopexit(sa->eb, NULL);
             }
         }
-        else {
-        }
     }
-    free(status);
 }
 
 struct p4_edge *find_edge_by_id(struct p4_file *pf, const char *id) {
@@ -191,22 +188,35 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
 }
 
 int build_edges(struct p4_file *pf) {
-    //printf("\n");
     for (int i=0; i < pf->n_edges; i++) {
         struct p4_edge *pe = &pf->edges[i];
         struct p4_node *from = find_node_by_id(pf, pe->from);
+        if (from == NULL) {
+            PRINT_DEBUG("No node found with id %s\n", pe->from);
+            return -1;
+        }
         struct p4_node *to = find_node_by_id(pf, pe->to);
+        if (to == NULL) {
+            PRINT_DEBUG("No node found with id %s\n", pe->to);
+            return -1;
+        }
 
         if (strncmp(from->type, "EXEC\0", 5) == 0 && strncmp(to->type, "EXEC\0", 5) == 0) {
             // Each EXEC node should have a max of one pipe in, one pipe out
-            if (from->out_pipe == NULL) {
-                from->out_pipe = pipe_new();
+            if (from->out_pipe == NULL && (from->out_pipe = pipe_new()) == NULL) {
+                PRINT_DEBUG("Failed to create pipe\n");
+                return -1;
             }
-            if (to->in_pipe == NULL) {
-                to->in_pipe = pipe_new();
+            if (to->in_pipe == NULL && (to->in_pipe = pipe_new()) == NULL) {
+                PRINT_DEBUG("Failed to create pipe\n");
+                return -1;
             }
             if ((int)from->n_listening_edges == 0) {
                 from->listening_edges = malloc(sizeof(*from->listening_edges));
+                if (from->listening_edges == NULL) {
+                PRINT_DEBUG("Failed to allocate memory\n");
+                return -1;
+                }
                 *from->listening_edges = pe;
                 from->n_listening_edges++;
             }
@@ -214,10 +224,8 @@ int build_edges(struct p4_file *pf) {
                 from->n_listening_edges++;
                 from->listening_edges = realloc(from->listening_edges, (from->n_listening_edges) * sizeof(*from->listening_edges));
                 if (from->listening_edges == NULL) {
-                    // realloc failed, TODO free + exit
-#ifdef HP4_DEBUG
-                    fprintf(stderr, "realloc failed\n");
-#endif /* HP4_DEBUG */
+                    PRINT_DEBUG("Failed to reallocate memory\n");
+                    return -1;
                 }
                 from->listening_edges[from->n_listening_edges - 1] = pe;
             }
@@ -225,13 +233,10 @@ int build_edges(struct p4_file *pf) {
         else {
             // TODO support non-EXEC nodes
             free_p4_file(pf);
-#ifdef HP4_DEBUG
-            fprintf(stderr, "Non-EXEC nodes are not yet supported\n");
-#endif /* HP4_DEBUG */
+            PRINT_DEBUG("Non-EXEC nodes are not yet supported\n");
             return -1;
         }
 
-        //printf("%d: %s, %s, %s\n", i, pe->id, pe->from, pe->to);
     }
     return 0;
 }
@@ -242,48 +247,82 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
         if (strncmp(pn->type, "EXEC\0", 5) == 0) {
             if (pn->in_pipe == NULL && pn->out_pipe == NULL) {
                 // node is not joined to the graph, skip
-#ifdef HP4_DEBUG
-                fprintf(stderr, "disconnected node\n");
-#endif /* HP4_DEBUG */
+                // TODO this is not necessarily true if cmd writes to a file directly
+                PRINT_DEBUG("EXEC node %s is not connected to graph\n", pn->id);
                 continue;
             }
             if (pn->out_pipe != NULL) {
                 struct event_args *ea = malloc(sizeof(*ea));
+                if (ea == NULL) {
+                    return -1;
+                }
                 ea->out_pipe = pn->out_pipe;
                 ea->n_in_pipes = (int)pn->n_listening_edges;
                 ea->bytes_spliced = calloc(pn->n_listening_edges,
                                            sizeof(*ea->bytes_spliced));
+                if (ea->bytes_spliced == NULL) {
+                    PRINT_DEBUG("Failed to allocate memory\n");
+                    free(ea);
+                    return -1;
+                }
                 ea->in_pipes = calloc(pn->n_listening_edges,
                                       sizeof(*ea->in_pipes));
+                if (ea->in_pipes == NULL) {
+                    PRINT_DEBUG("Failed to allocate memory\n");
+                    free(ea->bytes_spliced);
+                    free(ea);
+                    return -1;
+                }
                 for (int j=0; j < (int)pn->n_listening_edges; j++) {
                     ea->bytes_spliced[j] = &pn->listening_edges[j]->bytes_spliced;
-                    ea->in_pipes[j] = find_node_by_id(pf, pn->listening_edges[j]->to)->in_pipe;
+                    ea->in_pipes[j] = find_node_by_id(pf,
+                                          pn->listening_edges[j]->to)->in_pipe;
+                    if (ea->in_pipes[j] == NULL) {
+                        PRINT_DEBUG("No node found with id %s\n",
+                                pn->listening_edges[j]->to);
+                        free(ea->in_pipes);
+                        free(ea->bytes_spliced);
+                        free(ea);
+                        return -1;
+                    }
                 }
                 struct event *readable = event_new(eb, pn->out_pipe->read_fd,
                                                    EV_READ|EV_PERSIST, pipeCb,
                                                    ea);
-                event_add(readable, NULL);
+                if (event_add(readable, NULL) < 0) {
+                    // TODO print something?
+                    event_free(readable);
+                    free(ea->in_pipes);
+                    free(ea->bytes_spliced);
+                    free(ea);
+                    return -1;
+                }
             }
             pid_t pid = fork();
-            if (pid == 0) { // child
+            if (pid < 0) {
+                perror("forking process failed");
+            }
+            else if (pid == 0) { // child
                 if (pn->out_pipe != NULL) {
-                    dup2(pn->out_pipe->write_fd, STDOUT_FILENO);
+                    if (dup2(pn->out_pipe->write_fd, STDOUT_FILENO) < 0) {
+                        perror("dup2 failed");
+                    }
                 }
                 if (pn->in_pipe != NULL) {
-                    dup2(pn->in_pipe->read_fd, STDIN_FILENO);
+                    if (dup2(pn->in_pipe->read_fd, STDIN_FILENO) < 0) {
+                        perror("dup2 failed");
+                    }
                 }
                 for (int j = 0; j < pf->n_nodes; j++) {
                     struct p4_node *po = &pf->nodes[j];
                     if (po->in_pipe && close_pipe(po->in_pipe) < 0) {
-                        perror("close in pipe\n");
+                        perror("close_pipe failed");
                     }
                     if (po->out_pipe && close_pipe(po->out_pipe) < 0) {
-                        perror("close out pipe\n");
+                        perror("close_pipe failed");
                     }
                 }
-#ifdef HP4_DEBUG
-                fprintf(stderr, "Node %s about to exec\n", pn->id);
-#endif /* HP4_DEBUG */
+                PRINT_DEBUG("Node %s about to exec\n", pn->id);
                 p4_args_list_t p4_argv = args_list_new(pn->cmd);
                 execvp(p4_argv[0], p4_argv);
                 free(p4_argv);
@@ -295,9 +334,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
         else {
             // TODO support *FILE nodes
             free_p4_file(pf);
-#ifdef HP4_DEBUG
-            fprintf(stderr, "Non-EXEC nodes not yet supported\n");
-#endif /* HP4_DEBUG */
+            PRINT_DEBUG("Non-EXEC nodes not yet supported\n");
             return -1;
         }
     }
@@ -306,35 +343,86 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
 
 int main(int argc, char **argv) {
     if (argc != 2) {
-#ifdef HP4_DEBUG
-        fprintf(stderr, "specify json filename\n");
-#endif /* HP4_DEBUG */
+        PRINT_DEBUG("specify json filename\n");
         return 1;
     }
 
     struct p4_file *pf = p4_file_new(argv[1]);
-
-    struct event_base *eb = event_base_new();
-
-    struct event *sigintev = evsignal_new(eb, SIGINT, sigint_handler, eb);
-    event_add(sigintev, NULL);
-
-    struct sigchld_args *sa = malloc(sizeof(*sa));
-    sa->pf = pf;
-    sa->eb = eb;
-
-    struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, sa);
-    event_add(sigchldev, NULL);
-
     if (pf == NULL) {
         return 1;
     }
 
+    struct event_base *eb = event_base_new();
+    if (eb == NULL) {
+        free_p4_file(pf);
+        return 1;
+    }
+
+    struct event *sigintev = evsignal_new(eb, SIGINT, sigint_handler, eb);
+    if (sigintev == NULL) {
+        PRINT_DEBUG("Failed to create sigint event\n");
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    if (event_add(sigintev, NULL) < 0) {
+        PRINT_DEBUG("Failed to add sigint event\n");
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+
+    struct sigchld_args *sa = malloc(sizeof(*sa));
+    if (sa == NULL) {
+        PRINT_DEBUG("Failed to allocate memory for sigchld_args\n");
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    sa->pf = pf;
+    sa->eb = eb;
+
+    struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, sa);
+    if (sigchldev == NULL) {
+        PRINT_DEBUG("Failed to create sigchld event\n");
+        free(sa);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    if (event_add(sigchldev, NULL) < 0) {
+        PRINT_DEBUG("Failed to add sigchld event\n");
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+
+    if (pf == NULL) {
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+
     if (build_edges(pf) == -1) {
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
         return 1;
     }
 
     if (build_nodes(pf, eb) == -1) {
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
         return 1;
     }
 
