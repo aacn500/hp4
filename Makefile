@@ -5,8 +5,8 @@ all: bin/hp4
 clean:
 	rm -rf bin
 
-debug:
-	gcc -Wall -g -v -da -Q hp4.c parser.c -o bin/hp4 -levent -ljansson -Og
+debug: bin
+	gcc -Wall -g -v -da -Q hp4.c parser.c -o bin/hp4 -levent -ljansson -Og # -DHP4_DEBUG
 
 bin:
 	mkdir -p bin

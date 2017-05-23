@@ -111,6 +111,11 @@ void free_p4_node(struct p4_node *pn) {
     free(pn->subtype);
     free(pn->cmd);
     free(pn->name);
+
+    free(pn->in_pipe);
+    free(pn->out_pipe);
+
+    free(pn->listening_edges);
 }
 
 void free_p4_node_array(struct p4_node *nodes_array, int n_nodes) {
@@ -254,13 +259,13 @@ struct p4_file *p4_file_new(const char *filename) {
 
     pf->nodes = p4_nodes_array_new(nodes);
     if (pf->nodes == NULL) {
-        free(pf);
+        free_p4_file(pf);
         json_decref(root);
         return NULL;
     }
     pf->edges = p4_edges_array_new(edges);
     if (pf->edges == NULL) {
-        free(pf);
+        free_p4_file(pf);
         json_decref(root);
         return NULL;
     }
