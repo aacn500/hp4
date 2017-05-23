@@ -12,4 +12,4 @@ bin:
 	mkdir -p bin
 
 bin/hp4: bin hp4.c parser.c
-	gcc -Wall hp4.c parser.c -o bin/hp4 -levent -ljansson
+	gcc -Wall -Wextra -Wno-unused-parameter hp4.c parser.c -o bin/hp4 -levent -ljansson

@@ -9,6 +9,11 @@
             "id": "cat",
             "type": "EXEC",
             "cmd": "cat"
+        },
+        {
+            "id": "rev",
+            "type": "EXEC",
+            "cmd": "rev"
         }
     ],
     "edges": [
@@ -16,6 +21,11 @@
             "id": "edge",
             "from": "hello",
             "to": "cat"
+        },
+        {
+            "id": "revedge",
+            "from": "hello",
+            "to": "rev"
         }
     ]
 }

@@ -10,6 +10,28 @@
 
 #include "parser.h"
 
+p4_args_list_t args_list_new(char *args) {
+    char **res = NULL;
+    char *p = strtok(args, " ");
+    int n_spaces = 0;
+
+    while (p) {
+        res = realloc(res, sizeof(*res) * ++n_spaces);
+
+        if (res == NULL)
+            // realloc failed
+            return NULL;
+
+        res[n_spaces-1] = p;
+
+        p = strtok(NULL, " ");
+    }
+    res = realloc(res, sizeof(*res) * (n_spaces + 1));
+    res[n_spaces] = 0;
+
+    return res;
+}
+
 int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
     json_incref(edge);
     if (!json_is_object(edge)) {
@@ -68,9 +90,9 @@ struct p4_edge *p4_edges_array_new(json_t *edges) {
         return NULL;
     }
     size_t n_edges = json_array_size(edges);
-    struct p4_edge *edges_array = malloc(n_edges * sizeof(*edges_array));
+    struct p4_edge *edges_array = calloc(n_edges, sizeof(*edges_array));
 
-    for (int i = 0; i < n_edges; i++) {
+    for (int i = 0; i < (int)n_edges; i++) {
         if (parse_p4_edge(json_array_get(edges, i), &edges_array[i]) < 0) {
             fprintf(stderr, "Failed to parse edge\n");
             free(edges_array);
@@ -152,14 +174,15 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */
     int valid_subtype = (parsed_node->subtype == NULL ||
-                         (strcmp(parsed_node->subtype, "DUMMY") == 0 &&
-                          strcmp(parsed_node->type, "RAFILE") == 0)) ? 0 : -1;
+                         (strncmp(parsed_node->subtype, "DUMMY\0", 6) == 0 &&
+                          strncmp(parsed_node->type, "RAFILE\0", 7) == 0)) ? 0 : -1;
     /* cmd must be defined iff type == EXEC */
     int valid_cmd =
-        ((parsed_node->cmd != NULL) == (strcmp(parsed_node->type, "EXEC") == 0)) ? 0 : -1;
+        ((parsed_node->cmd != NULL) == (strncmp(parsed_node->type, "EXEC\0", 5) == 0)) ? 0 : -1;
     /* name must be defined iff type == *FILE */
     const char *type_suffix = strrchr(parsed_node->type, 'F');
-    int valid_name = (parsed_node->name != NULL) == (type_suffix != NULL && strcmp(type_suffix, "FILE") == 0) ? 0 : -1;
+    int valid_name =
+        (parsed_node->name != NULL) == (type_suffix != NULL && strncmp(type_suffix, "FILE\0", 5) == 0) ? 0 : -1;
 
     if (!(valid_subtype == 0 && valid_cmd == 0 && valid_name == 0)) {
         fprintf(stderr, "%s\n", parsed_node->cmd);
@@ -183,9 +206,9 @@ struct p4_node *p4_nodes_array_new(json_t *nodes) {
     }
     size_t n_nodes = json_array_size(nodes);
 
-    struct p4_node *nodes_array = malloc(n_nodes * sizeof(*nodes_array));
+    struct p4_node *nodes_array = calloc(n_nodes, sizeof(*nodes_array));
 
-    for (int i = 0; i < n_nodes; i++) {
+    for (int i = 0; i < (int)n_nodes; i++) {
         if (parse_p4_node(json_array_get(nodes, i), &nodes_array[i]) < 0) {
             fprintf(stderr, "Failed to parse node\n");
             free(nodes_array);
@@ -250,42 +273,3 @@ void free_p4_file(struct p4_file *pf) {
     free_p4_edge_array(pf->edges, pf->n_edges);
     free(pf);
 }
-/* Uncomment this to get a running example of parser.c
-int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "specify json filename\n");
-        return 1;
-    }
-
-    struct p4_file *pf = p4_file_new(argv[1]);
-    if (pf == NULL) {
-        return 1;
-    }
-
-    for (int i = 0; i < pf->n_nodes; i++) {
-        struct p4_node *pn = &pf->nodes[i];
-        printf("%d: %s", i, pn->id);
-        printf(", type: %s", pn->type);
-        if (pn->subtype != NULL)
-            printf(", subtype: %s", pn->subtype);
-        if (pn->cmd != NULL)
-            printf(", cmd: %s", pn->cmd);
-        if (pn->name != NULL)
-            printf(", name: %s", pn->name);
-        printf("\n");
-    }
-
-    for (int i = 0; i < pf->n_edges; i++) {
-        struct p4_edge *pe = &pf->edges[i];
-        if (pe == NULL) {
-            fprintf(stderr, "error: pe was not parsed :(\n");
-            return 1;
-        }
-        printf("%d: %s, from %s to %s\n", i, pe->id, pe->from, pe->to);
-    }
-
-    free_p4_file(pf);
-
-    return 0;
-}
-*/
