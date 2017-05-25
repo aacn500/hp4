@@ -10,6 +10,10 @@
 
 #include "parser.h"
 
+/*
+ * Splits a cmd such as `grep -v word` into an array of strings,
+ * where the last element is NULL, as is expected by exec() functions.
+ */
 p4_args_list_t args_list_new(char *args) {
     char **res = NULL;
     char *p = strtok(args, " ");
@@ -27,7 +31,7 @@ p4_args_list_t args_list_new(char *args) {
         p = strtok(NULL, " ");
     }
     res = realloc(res, sizeof(*res) * (n_spaces + 1));
-    res[n_spaces] = 0;
+    res[n_spaces] = NULL;
 
     return res;
 }
@@ -74,35 +78,41 @@ void free_p4_edge(struct p4_edge *pe) {
     free(pe->id);
     free(pe->from);
     free(pe->to);
+    free(pe);
 }
 
-void free_p4_edge_array(struct p4_edge *edges_arr, int n_edges) {
-    for (int i = 0; i < n_edges; i++) {
-        free_p4_edge(&edges_arr[i]);
+void free_p4_edge_array(struct p4_edge_array *edges) {
+    for (size_t i = 0u; i < edges->length; i++) {
+        free_p4_edge(edges->edges[i]);
     }
-    free(edges_arr);
+    free(edges->edges);
+    free(edges);
 }
 
-struct p4_edge *p4_edges_array_new(json_t *edges) {
+struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
     json_incref(edges);
     if (!json_is_array(edges)) {
         json_decref(edges);
         return NULL;
     }
-    size_t n_edges = json_array_size(edges);
-    struct p4_edge *edges_array = calloc(n_edges, sizeof(*edges_array));
 
-    for (int i = 0; i < (int)n_edges; i++) {
-        if (parse_p4_edge(json_array_get(edges, i), &edges_array[i]) < 0) {
+    struct p4_edge_array *edge_arr = malloc(sizeof(*edge_arr));
+    edge_arr->length = length;
+    edge_arr->edges = calloc(edge_arr->length, sizeof(*edge_arr->edges));
+
+    for (int i = 0; i < (int)edge_arr->length; i++) {
+        edge_arr->edges[i] = calloc(1u, sizeof(**edge_arr->edges));
+
+        if (parse_p4_edge(json_array_get(edges, i), edge_arr->edges[i]) < 0) {
             fprintf(stderr, "Failed to parse edge\n");
-            free(edges_array);
+            free_p4_edge_array(edge_arr);
             json_decref(edges);
             return NULL;
         }
     }
 
     json_decref(edges);
-    return edges_array;
+    return edge_arr;
 }
 
 void free_p4_node(struct p4_node *pn) {
@@ -115,14 +125,18 @@ void free_p4_node(struct p4_node *pn) {
     free(pn->in_pipe);
     free(pn->out_pipe);
 
+    if (pn->listening_edges != NULL)
+        free(pn->listening_edges->edges);
     free(pn->listening_edges);
+    free(pn);
 }
 
-void free_p4_node_array(struct p4_node *nodes_array, int n_nodes) {
-    for (int i = 0; i < n_nodes; i++) {
-        free_p4_node(&nodes_array[i]);
+void free_p4_node_array(struct p4_node_array *nodes) {
+    for (size_t i = 0u; i < nodes->length; i++) {
+        free_p4_node(nodes->nodes[i]);
     }
-    free(nodes_array);
+    free(nodes->nodes);
+    free(nodes);
 }
 
 int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
@@ -203,26 +217,30 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     return 0;
 }
 
-struct p4_node *p4_nodes_array_new(json_t *nodes) {
+struct p4_node_array *p4_node_array_new(json_t *nodes, size_t length) {
     json_incref(nodes);
     if (!json_is_array(nodes)) {
         json_decref(nodes);
         return NULL;
     }
-    size_t n_nodes = json_array_size(nodes);
 
-    struct p4_node *nodes_array = calloc(n_nodes, sizeof(*nodes_array));
+    struct p4_node_array *node_arr = malloc(sizeof(*node_arr));
+    node_arr->length = length;
+    node_arr->nodes = calloc(node_arr->length, sizeof(*node_arr->nodes));
 
-    for (int i = 0; i < (int)n_nodes; i++) {
-        if (parse_p4_node(json_array_get(nodes, i), &nodes_array[i]) < 0) {
+    for (int i = 0; i < (int)node_arr->length; i++) {
+        node_arr->nodes[i] = calloc(1u, sizeof(**node_arr->nodes));
+
+        if (parse_p4_node(json_array_get(nodes, i), node_arr->nodes[i]) < 0) {
             fprintf(stderr, "Failed to parse node\n");
-            free(nodes_array);
+
+            free(node_arr);
             json_decref(nodes);
             return NULL;
         }
     }
     json_decref(nodes);
-    return nodes_array;
+    return node_arr;
 }
 
 struct p4_file *p4_file_new(const char *filename) {
@@ -254,17 +272,14 @@ struct p4_file *p4_file_new(const char *filename) {
 
     struct p4_file *pf = malloc(sizeof(*pf));
 
-    pf->n_nodes = (int)json_array_size(nodes);
-    pf->n_edges = (int)json_array_size(edges);
-
-    pf->nodes = p4_nodes_array_new(nodes);
-    if (pf->nodes == NULL) {
+    pf->edges = p4_edge_array_new(edges, json_array_size(edges));
+    if (pf->edges == NULL) {
         free_p4_file(pf);
         json_decref(root);
         return NULL;
     }
-    pf->edges = p4_edges_array_new(edges);
-    if (pf->edges == NULL) {
+    pf->nodes = p4_node_array_new(nodes, json_array_size(nodes));
+    if (pf->nodes == NULL) {
         free_p4_file(pf);
         json_decref(root);
         return NULL;
@@ -274,7 +289,7 @@ struct p4_file *p4_file_new(const char *filename) {
 }
 
 void free_p4_file(struct p4_file *pf) {
-    free_p4_node_array(pf->nodes, pf->n_nodes);
-    free_p4_edge_array(pf->edges, pf->n_edges);
+    free_p4_node_array(pf->nodes);
+    free_p4_edge_array(pf->edges);
     free(pf);
 }

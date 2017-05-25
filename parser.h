@@ -13,10 +13,14 @@ struct p4_node {
     struct pipe *in_pipe;
     struct pipe *out_pipe;
 
-    struct p4_edge **listening_edges;
-    size_t n_listening_edges;
+    struct p4_edge_array *listening_edges;
 
     pid_t pid;
+};
+
+struct p4_node_array {
+    size_t length;
+    struct p4_node **nodes;
 };
 
 struct p4_edge {
@@ -27,11 +31,14 @@ struct p4_edge {
     ssize_t bytes_spliced;
 };
 
+struct p4_edge_array {
+    size_t length;
+    struct p4_edge **edges;
+};
+
 struct p4_file {
-    int n_nodes;
-    int n_edges;
-    struct p4_node *nodes;
-    struct p4_edge *edges;
+    struct p4_edge_array *edges;
+    struct p4_node_array *nodes;
 };
 
 typedef char** p4_args_list_t;
