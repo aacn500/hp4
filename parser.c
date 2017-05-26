@@ -9,31 +9,68 @@
 #include <jansson.h>
 
 #include "parser.h"
+#include "pipe.h"
+
+#define PORT_DELIMITER ':'
 
 /*
  * Splits a cmd such as `grep -v word` into an array of strings,
  * where the last element is NULL, as is expected by exec() functions.
  */
-p4_args_list_t args_list_new(char *args) {
-    char **res = NULL;
-    char *p = strtok(args, " ");
-    int n_spaces = 0;
+struct p4_args *args_list_new(const char *args) {
+    char *tmp_args = malloc((strlen(args) + 1) * sizeof(*tmp_args));
+    strcpy(tmp_args, args);
+    char **argv = NULL;
+    char *p = strtok(tmp_args, " ");
+    int argc = 0;
 
     while (p) {
-        res = realloc(res, sizeof(*res) * ++n_spaces);
+        argv = realloc(argv, sizeof(*argv) * ++argc);
 
-        if (res == NULL)
+        if (argv == NULL)
             // realloc failed
             return NULL;
 
-        res[n_spaces-1] = p;
+        argv[argc-1] = p;
 
         p = strtok(NULL, " ");
     }
-    res = realloc(res, sizeof(*res) * (n_spaces + 1));
-    res[n_spaces] = NULL;
+    argv = realloc(argv, sizeof(*argv) * (argc + 1));
+    argv[argc] = NULL;
 
-    return res;
+    struct p4_args *pa = malloc(sizeof(*pa));
+    pa->argc = argc;
+    pa->argv = argv;
+
+    return pa;
+}
+
+char **parse_edge_string(const char *edge_ro) {
+    char **edge_strings = malloc(2 * sizeof(*edge_strings));
+    char *port_ro = strchr(edge_ro, PORT_DELIMITER);
+    if (port_ro == NULL) {
+        // Did not find any instance of PORT_DELIMITER;
+        // use default of "-", to represent std(in|out).
+        edge_strings[0] = malloc((strlen(edge_ro) + 1) * sizeof(**edge_strings));
+        strcpy(edge_strings[0], edge_ro);
+        edge_strings[1] = malloc((sizeof("-")));
+        strcpy(edge_strings[1], "-");
+        return edge_strings;
+    }
+    port_ro++;
+    // there should only be one instance of PORT_DELIMITER in the string
+    if (strchr(port_ro, PORT_DELIMITER) != NULL) {
+        free(edge_strings);
+        return NULL;
+    }
+    size_t id_len = port_ro - edge_ro;
+    size_t port_len = strlen(port_ro) + 1;
+    edge_strings[0] = malloc(id_len * sizeof(**edge_strings));
+    edge_strings[1] = malloc(port_len * sizeof(**edge_strings));
+    strncpy(edge_strings[0], edge_ro, id_len);
+    edge_strings[0][id_len-1] = 0;
+    strcpy(edge_strings[1], port_ro);
+    return edge_strings;
 }
 
 int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
@@ -57,18 +94,40 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         parsed_edge->id = NULL;
     }
     if ((json_from = json_object_get(edge, "from"))) {
-        parsed_edge->from = malloc((json_string_length(json_from) + 1) * sizeof(char));
-        strcpy(parsed_edge->from, json_string_value(json_from));
+        const char *from_ro = json_string_value(json_from);
+        char **from_parsed = parse_edge_string(from_ro);
+        if (from_parsed != NULL) {
+            parsed_edge->from = from_parsed[0];
+            parsed_edge->from_port = from_parsed[1];
+            free(from_parsed);
+        }
+        else {
+            // TODO error when parsing the edge; found multiple ports
+            parsed_edge->from = NULL;
+            parsed_edge->from_port = NULL;
+        }
     }
     else {
         parsed_edge->from = NULL;
+        parsed_edge->from_port = NULL;
     }
     if ((json_to = json_object_get(edge, "to"))) {
-        parsed_edge->to = malloc((json_string_length(json_to) + 1) * sizeof(char));
-        strcpy(parsed_edge->to, json_string_value(json_to));
+        const char *to_ro = json_string_value(json_to);
+        char **to_parsed = parse_edge_string(to_ro);
+        if (to_parsed != NULL) {
+            parsed_edge->to = to_parsed[0];
+            parsed_edge->to_port = to_parsed[1];
+            free(to_parsed);
+        }
+        else {
+            // TODO error when parsing the edge; found multiple ports
+            parsed_edge->to = NULL;
+            parsed_edge->to_port = NULL;
+        }
     }
     else {
         parsed_edge->to = NULL;
+        parsed_edge->to_port = NULL;
     }
     json_decref(edge);
     return 0;
@@ -77,7 +136,9 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
 void free_p4_edge(struct p4_edge *pe) {
     free(pe->id);
     free(pe->from);
+    free(pe->from_port);
     free(pe->to);
+    free(pe->to_port);
     free(pe);
 }
 
@@ -122,8 +183,8 @@ void free_p4_node(struct p4_node *pn) {
     free(pn->cmd);
     free(pn->name);
 
-    free(pn->in_pipe);
-    free(pn->out_pipe);
+    pipe_array_free(pn->in_pipes);
+    pipe_array_free(pn->out_pipes);
 
     if (pn->listening_edges != NULL)
         free(pn->listening_edges->edges);
@@ -189,6 +250,9 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     else {
         parsed_node->name = NULL;
     }
+
+    parsed_node->in_pipes = pipe_array_new();
+    parsed_node->out_pipes = pipe_array_new();
 
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */

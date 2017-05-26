@@ -1,9 +1,9 @@
 {
     "nodes": [
         {
-            "id": "hello",
+            "id": "wget",
             "type": "EXEC",
-            "cmd": "echo \"hello\""
+            "cmd": "wget -q https://github.com -O TMP_FILE"
         },
         {
             "id": "cat",
@@ -13,19 +13,40 @@
         {
             "id": "rev",
             "type": "EXEC",
-            "cmd": "rev"
+            "cmd": "tac"
+        },
+        {
+            "id": "save-cat",
+            "type": "EXEC",
+            "cmd": "sponge catted.txt"
+        },
+        {
+            "id": "save-rev",
+            "type": "EXEC",
+            "cmd": "sponge revved.txt"
         }
+
     ],
     "edges": [
         {
             "id": "edge",
-            "from": "hello",
+            "from": "wget:TMP_FILE",
             "to": "cat"
         },
         {
             "id": "revedge",
-            "from": "hello",
+            "from": "wget:TMP_FILE",
             "to": "rev"
+        },
+        {
+            "id": "save-edge",
+            "from": "cat",
+            "to": "save-cat"
+        },
+        {
+            "id": "save-rev-edge",
+            "from": "rev",
+            "to": "save-rev"
         }
     ]
 }

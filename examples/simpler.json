@@ -1,0 +1,31 @@
+{
+    "nodes": [
+        {
+            "id": "wget",
+            "type": "EXEC",
+            "cmd": "wget -q https://github.com -O TMP_FILE"
+        },
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "sponge simple.txt"
+        }
+    ],
+    "edges": [
+        {
+            "id": "catter",
+            "from": "wget:TMP_FILE",
+            "to": "cat"
+        },
+        {
+            "id": "saver",
+            "from": "cat",
+            "to": "save"
+        }
+    ]
+}

@@ -1,7 +1,11 @@
 #ifndef HP4_PARSER_H
 #define HP4_PARSER_H
 
+#include <stdint.h>
+
 #include <jansson.h>
+
+#include "pipe.h"
 
 struct p4_node {
     char *id;
@@ -10,8 +14,8 @@ struct p4_node {
     char *subtype;
     char *name;
 
-    struct pipe *in_pipe;
-    struct pipe *out_pipe;
+    struct pipe_array *in_pipes;
+    struct pipe_array *out_pipes;
 
     struct p4_edge_array *listening_edges;
 
@@ -26,9 +30,12 @@ struct p4_node_array {
 struct p4_edge {
     char *id;
     char *from;
+    char *from_port;
     char *to;
+    char *to_port;
 
-    ssize_t bytes_spliced;
+    // Potentially splicing multiple GBs; ensure 64-bit counter
+    int64_t bytes_spliced;
 };
 
 struct p4_edge_array {
@@ -41,12 +48,15 @@ struct p4_file {
     struct p4_node_array *nodes;
 };
 
-typedef char** p4_args_list_t;
+struct p4_args {
+    int argc;
+    char **argv;
+};
 
-p4_args_list_t args_list_new(char *args);
+struct p4_args *args_list_new(const char *args);
 
 struct p4_file *p4_file_new(const char *filename);
 
 void free_p4_file(struct p4_file *pf);
 
-#endif // HP4_PARSER_H
+#endif /* HP4_PARSER_H */
