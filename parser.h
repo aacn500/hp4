@@ -20,6 +20,7 @@ struct p4_node {
     struct p4_edge_array *listening_edges;
 
     pid_t pid;
+    short ended;
 };
 
 struct p4_node_array {

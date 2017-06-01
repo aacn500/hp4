@@ -84,6 +84,8 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
     json_t *json_from;
     json_t *json_to;
 
+    parsed_edge->bytes_spliced = 0l;
+
     // TODO all fields are compulsory
 
     if ((json_id = json_object_get(edge, "id"))) {
@@ -350,6 +352,26 @@ struct p4_file *p4_file_new(const char *filename) {
     }
     json_decref(root);
     return pf;
+}
+
+int validate_p4_file(struct p4_file *pf) {
+    // FIXME need to expand validations
+    for (int i = 0; i < (int)pf->nodes->length; i++) {
+        struct p4_node *node = pf->nodes->nodes[i];
+        if (node->id == NULL) {
+            fprintf(stderr, "One or more nodes do not have an id.\n");
+            return 0;
+        }
+        if (node->type == NULL) {
+            fprintf(stderr, "Node %s does not have a type.\n", node->id);
+            return 0;
+        }
+        if (strcmp(node->type, "EXEC") == 0 && node->cmd == NULL) {
+            fprintf(stderr, "Node %s is type EXEC but does not have a cmd.\n", node->id);
+            return 0;
+        }
+    }
+    return 1;
 }
 
 void free_p4_file(struct p4_file *pf) {

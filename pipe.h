@@ -6,6 +6,7 @@ struct pipe {
     int write_fd;
     char *port;
     char *edge_id;
+    size_t bytes_written;
 };
 
 struct pipe_array {

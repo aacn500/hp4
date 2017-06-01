@@ -1,10 +1,12 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -15,6 +17,13 @@
 #include "pipe.h"
 
 int children_gone = 0;
+int dev_null = 0;
+
+void close_dev_null(void) {
+    if (dev_null != 0) {
+        close(dev_null);
+    }
+}
 
 struct event_args {
     struct pipe_array *in_pipes;
@@ -62,32 +71,28 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
                 return;
             }
             if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
-                perror("close in pipe");
+                PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
+                        pn->id, strerror(errno));
             }
+            pn->ended = 1;
 
-            if (pn->out_pipes && pipe_array_close(pn->out_pipes) < 0) {
-                perror("close out pipe");
-            }
-
-            if (pn->listening_edges != NULL) {
-                for (int i = 0; i < (int)pn->listening_edges->length; i++) {
-                    struct p4_edge *edge = pn->listening_edges->edges[i];
-                    struct p4_node *downstream = find_node_by_id(sa->pf,
-                            edge->to);
-                    if (downstream == NULL) {
-                        PRINT_DEBUG("No node found with id %s\n", edge->to);
-                        return;
-                    }
-                    if (downstream->in_pipes) {
-                        PRINT_DEBUG("closing in pipe for downstream\n");
-                        for (int j = 0; j < (int)downstream->in_pipes->length; j++) {
-                            if (strcmp(downstream->in_pipes->pipes[j]->edge_id, edge->id) == 0) {
-                                close_pipe(downstream->in_pipes->pipes[j]);
-                            }
-                        }
+            if (pn->out_pipes) {
+                for (int i = 0; i < (int)pn->out_pipes->length; i++) {
+                    if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
+                        PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
+                                pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
                     }
                 }
             }
+
+            for (int j = 0; j < (int)sa->pf->edges->length; j++) {
+                if (strcmp(sa->pf->edges->edges[j]->to, pn->id) == 0) {
+                    fprintf(stderr, "edge %s finished after splicing %ld bytes\n",
+                           sa->pf->edges->edges[j]->id,
+                           sa->pf->edges->edges[j]->bytes_spliced);
+                }
+            }
+
             if (children_gone == (int)sa->pf->nodes->length) {
                 event_base_loopexit(sa->eb, NULL);
             }
@@ -138,16 +143,6 @@ char *strrep(const char *original, const char *replace, const char *with) {
     return result;
 }
 
-struct p4_edge *find_edge_by_id(struct p4_file *pf, const char *id) {
-    for (int i = 0; i < (int)pf->edges->length; i++) {
-        struct p4_edge *pe = pf->edges->edges[i];
-        if (strncmp(pe->id, id, strlen(id) + 1) == 0) {
-            return pe;
-        }
-    }
-    return NULL;
-}
-
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
     for (int i = 0; i < (int)pf->nodes->length; i++) {
         struct p4_node *pn = pf->nodes->nodes[i];
@@ -182,26 +177,51 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
     if ((what & EV_READ) == 0) {
         return;
     }
-    for (int i = 0; i < (int)ea->in_pipes->length - 1; i++) {
-        ssize_t bytes = tee(ea->out_pipe->read_fd,
-                            ea->in_pipes->pipes[i]->write_fd,
-                            4096,
-                            SPLICE_F_NONBLOCK);
-        if (bytes < 0) {
-            return;
+    size_t lowest_bytes_written = INT_MAX;
+    for (int i = 0; i < (int)ea->in_pipes->length; i++) {
+        // tee/splice algorithm based on answer in
+        // https://stackoverflow.com/a/14200975
+        // FIXME This will hang if processes do not read at same rate...
+        // both processes will need to be within 4KB! Not good...
+        if (ea->in_pipes->pipes[i]->bytes_written == 0) {
+            ssize_t bytes = tee(ea->out_pipe->read_fd,
+                                ea->in_pipes->pipes[i]->write_fd,
+                                4096,
+                                SPLICE_F_NONBLOCK);
+            if (bytes < 0) {
+                ea->in_pipes->pipes[i]->bytes_written = 0;
+            }
+            else {
+                //printf("tee of size %ld\n", bytes);
+            }
+            if (bytes > 0) {
+                ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
+                *ea->bytes_spliced[i] += bytes;
+            }
         }
-        *ea->bytes_spliced[i] += bytes;
+        if (ea->in_pipes->pipes[i]->bytes_written < lowest_bytes_written) {
+            lowest_bytes_written = ea->in_pipes->pipes[i]->bytes_written;
+        }
     }
     ssize_t bytes = splice(ea->out_pipe->read_fd,
                            NULL,
-                           ea->in_pipes->pipes[ea->in_pipes->length - 1]->write_fd,
+                           dev_null,
                            NULL,
-                           4096,
+                           lowest_bytes_written,
                            SPLICE_F_NONBLOCK);
     if (bytes < 0) {
         return;
     }
-    *ea->bytes_spliced[ea->in_pipes->length - 1] += bytes;
+    if (bytes == 0) {
+        close(ea->out_pipe->read_fd);
+        for (int k = 0; k < (int)ea->in_pipes->length; k++) {
+            close(ea->in_pipes->pipes[k]->write_fd);
+        }
+    }
+    //printf("splice of size %ld\n", bytes);
+    for (int j = 0; j < (int)ea->in_pipes->length; j++) {
+        ea->in_pipes->pipes[j]->bytes_written -= bytes;
+    }
 }
 
 int build_edges(struct p4_file *pf) {
@@ -283,15 +303,16 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     ea->out_pipe = pn->out_pipes->pipes[j];
                     ea->in_pipes = pipe_array_new();
                     ea->bytes_spliced = calloc(pn->listening_edges->length,
-                                               sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
+                            sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
+
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
                         struct p4_edge *edge = pn->listening_edges->edges[k];
                         ea->bytes_spliced[k] = &edge->bytes_spliced;
                         struct p4_node *dest = find_node_by_id(pf, edge->to);
                         if (dest == NULL) {
                             PRINT_DEBUG("No node found with id %s\n", edge->to);
-                            free(ea->bytes_spliced);
                             pipe_array_free(ea->in_pipes);
+                            free(ea->bytes_spliced);
                             free(ea);
                             return -1;
                         }
@@ -382,6 +403,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
             } // end child
             else {
                 pn->pid = pid;
+                pn->ended = 0;
             }
         }
         else {
@@ -399,6 +421,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "specify json filename\n");
         return 1;
     }
+
+    dev_null = open("/dev/null", O_WRONLY);
+    atexit(close_dev_null);
 
     struct p4_file *pf = p4_file_new(argv[1]);
     if (pf == NULL) {

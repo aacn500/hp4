@@ -3,7 +3,7 @@
         {
             "id": "wget",
             "type": "EXEC",
-            "cmd": "wget -q https://github.com -O TMP_FILE"
+            "cmd": "wget -q https://raw.githubusercontent.com/wtsi-npg/teepot/devel/teepot.c -O-"
         },
         {
             "id": "cat",
@@ -14,6 +14,11 @@
             "id": "rev",
             "type": "EXEC",
             "cmd": "tac"
+        },
+        {
+            "id": "indirection",
+            "type": "EXEC",
+            "cmd": "cat"
         },
         {
             "id": "save-cat",
@@ -30,12 +35,12 @@
     "edges": [
         {
             "id": "edge",
-            "from": "wget:TMP_FILE",
+            "from": "wget",
             "to": "cat"
         },
         {
             "id": "revedge",
-            "from": "wget:TMP_FILE",
+            "from": "wget",
             "to": "rev"
         },
         {
@@ -44,8 +49,13 @@
             "to": "save-cat"
         },
         {
-            "id": "save-rev-edge",
+            "id": "ie",
             "from": "rev",
+            "to": "indirection"
+        },
+        {
+            "id": "save-rev-edge",
+            "from": "indirection",
             "to": "save-rev"
         }
     ]
