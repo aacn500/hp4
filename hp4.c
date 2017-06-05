@@ -6,7 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -16,12 +15,15 @@
 #include "parser.h"
 #include "pipe.h"
 
-int children_gone = 0;
-int dev_null = 0;
+int n_children_exited = 0;
+int fd_dev_null = -1;
 
 void close_dev_null(void) {
-    if (dev_null != 0) {
-        close(dev_null);
+    if (fd_dev_null >= 0) {
+        // ignore return value as we do not need to ensure writes
+        // to /dev/null are successful
+        close(fd_dev_null);
+        fd_dev_null = -1;
     }
 }
 
@@ -37,9 +39,6 @@ struct sigchld_args {
 };
 
 
-struct p4_node *find_node_by_id(struct p4_file *pf, const char *id);
-struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid);
-
 void sigint_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("\b\bHandling sigint...\n");
     struct event_base *eb = arg;
@@ -49,51 +48,71 @@ void sigint_handler(evutil_socket_t fd, short what, void *arg) {
 void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("killing child...\n");
     struct sigchld_args *sa = arg;
-    int status;
-    pid_t p = waitpid(-1, &status, WNOHANG);
-    if (p == -1) {
-        PRINT_DEBUG("Got an unexpected error while waiting for child to terminate: %s\n", strerror(errno));
-    }
-    else if (p == 0) {
-        PRINT_DEBUG("waitpid for result 0\n");
-    }
-    else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
-        ++children_gone;
-        PRINT_DEBUG("%dth child process ended\n", children_gone);
-        struct p4_node *pn = find_node_by_pid(sa->pf, p);
-        if (pn == NULL) {
-            PRINT_DEBUG("No node found with pid %u\n", p);
-            return;
+    /* Handler is only added back onto event queue after returning. If another
+     * process exits while handler is running, handler will not be called.
+     * So we loop until error (p == -1) or no processes have terminated (p == 0)
+     */
+    while (1) {
+        int status;
+        pid_t p = waitpid(-1, &status, WNOHANG);
+        if (p == -1) {
+            if (errno == ECHILD) {
+                PRINT_DEBUG("Waited for a process to terminate, but all "
+                            "child processes have already terminated.\n");
+            } else {
+                PRINT_DEBUG("Got an unexpected error while waiting for child to terminate: %s\n", strerror(errno));
+            }
+            break;
         }
-        if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
-            PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
-                    pn->id, strerror(errno));
+        else if (p == 0) {
+            PRINT_DEBUG("Waited for a process to terminate, but none are "
+                        "finished. Exiting event handler...\n");
+            break;
         }
-        pn->ended = 1;
+        else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
+            ++n_children_exited;
+            PRINT_DEBUG("%dth child process ended\n", n_children_exited);
+            struct p4_node *pn = find_node_by_pid(sa->pf, p);
+            if (pn == NULL) {
+                PRINT_DEBUG("No node found with pid %u\n", p);
+                return;
+            }
+            if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
+                PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
+                        pn->id, strerror(errno));
+            }
+            pn->ended = 1;
 
-        if (pn->out_pipes) {
-            for (int i = 0; i < (int)pn->out_pipes->length; i++) {
-                if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
-                    PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
-                            pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
+            if (pn->out_pipes) {
+                for (int i = 0; i < (int)pn->out_pipes->length; i++) {
+                    if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
+                        PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
+                                pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
+                    }
                 }
             }
-        }
 
-        for (int j = 0; j < (int)sa->pf->edges->length; j++) {
-            if (strcmp(sa->pf->edges->edges[j]->to, pn->id) == 0) {
-                fprintf(stderr, "edge %s finished after splicing %ld bytes\n",
-                       sa->pf->edges->edges[j]->id,
-                       sa->pf->edges->edges[j]->bytes_spliced);
+            for (int j = 0; j < (int)sa->pf->edges->length; j++) {
+                if (strcmp(sa->pf->edges->edges[j]->to, pn->id) == 0) {
+                    PRINT_DEBUG("edge %s finished after splicing %ld bytes\n",
+                           sa->pf->edges->edges[j]->id,
+                           sa->pf->edges->edges[j]->bytes_spliced);
+                }
+            }
+
+            if (n_children_exited == (int)sa->pf->nodes->length) {
+                event_base_loopexit(sa->eb, NULL);
             }
         }
-
-        if (children_gone == (int)sa->pf->nodes->length) {
-            event_base_loopexit(sa->eb, NULL);
+        else if (WIFSIGNALED(status)) {
+            PRINT_DEBUG("child was signaled by %d\n", WTERMSIG(status));
+            break;
         }
-    }
-    else if (WIFSIGNALED(status)) {
-        PRINT_DEBUG("child was signaled by %d\n", WTERMSIG(status));
+        else {
+            PRINT_DEBUG("process did not exit normally and was not terminated "
+                        "by a signal.\n");
+            break;
+        }
     }
 }
 
@@ -113,10 +132,10 @@ char *strrep(const char *original, const char *replace, const char *with) {
     const char *strp = original;
     size_t result_len = 1;
     char *result = malloc(result_len);
-    *result = 0;
     if (result == NULL) {
         return NULL;
     }
+    *result = 0;
 
     char *next = NULL;
     while ((next = strstr(strp, replace)) != NULL) {
@@ -140,35 +159,6 @@ char *strrep(const char *original, const char *replace, const char *with) {
     return result;
 }
 
-struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
-    for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *pn = pf->nodes->nodes[i];
-        if (strncmp(pn->id, id, strlen(id) + 1) == 0) {
-            return pn;
-        }
-    }
-    return NULL;
-}
-
-struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid) {
-    for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *pn = pf->nodes->nodes[i];
-        if (pid == pn->pid) {
-            return pn;
-        }
-    }
-    return NULL;
-}
-
-struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
-    for (int i = 0; i < (int)pa->length; i++) {
-        if (strcmp(pa->pipes[i]->edge_id, edge_id) == 0) {
-            return pa->pipes[i];
-        }
-    }
-    return NULL;
-}
-
 void pipeCb(evutil_socket_t fd, short what, void *arg) {
     struct event_args *ea = arg;
     if ((what & EV_READ) == 0) {
@@ -188,10 +178,7 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
             if (bytes < 0) {
                 ea->in_pipes->pipes[i]->bytes_written = 0;
             }
-            else {
-                //printf("tee of size %ld\n", bytes);
-            }
-            if (bytes > 0) {
+            else if (bytes > 0) {
                 ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
                 *ea->bytes_spliced[i] += bytes;
             }
@@ -202,7 +189,7 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
     }
     ssize_t bytes = splice(ea->out_pipe->read_fd,
                            NULL,
-                           dev_null,
+                           fd_dev_null,
                            NULL,
                            lowest_bytes_written,
                            SPLICE_F_NONBLOCK);
@@ -215,7 +202,6 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
             close(ea->in_pipes->pipes[k]->write_fd);
         }
     }
-    //printf("splice of size %ld\n", bytes);
     for (int j = 0; j < (int)ea->in_pipes->length; j++) {
         ea->in_pipes->pipes[j]->bytes_written -= bytes;
     }
@@ -278,6 +264,74 @@ int build_edges(struct p4_file *pf) {
     return 0;
 }
 
+void run_node(struct p4_file *pf, struct p4_node *pn) {
+    struct p4_args *pa = args_list_new(pn->cmd);
+    pid_t ppid = getppid();
+    int def_sin = 1;
+    int def_sout = 1;
+    for (int m = 0; m < (int)pn->out_pipes->length; m++) {
+        struct pipe *out_pipe = pn->out_pipes->pipes[m];
+        if (strcmp(out_pipe->port, "-") == 0) {
+            if (def_sout == 0) {
+                // TODO this means that another pipe has already changed this node's
+                // stdout. This is an invalid graph. It also should not happen; two
+                // edges which read stdout should share an out_pipe.
+            }
+            else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
+                perror("dup2 failed");
+            }
+            def_sout = 0;
+        }
+        else {
+            char *out_port_fs = calloc(50u, sizeof(*out_port_fs));
+            sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd);
+            for (int n = 0; n < pa->argc; n++) {
+                char *replaced = strrep(pa->argv[n], out_pipe->port, out_port_fs);
+                pa->argv[n] = replaced;
+            }
+        }
+    }
+
+    for (int o = 0; o < (int)pn->in_pipes->length; o++) {
+        struct pipe *in_pipe = pn->in_pipes->pipes[o];
+        if (strcmp(in_pipe->port, "-") == 0) {
+            if (def_sin == 0) {
+                // TODO this means that another edge has already changed this node's
+                // stdout. This is an invalid graph.
+            }
+            else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
+                perror("dup2 failed");
+            }
+            def_sin = 0;
+        }
+        else {
+            char *in_port_fs = calloc(20u, sizeof(*in_port_fs));
+            sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd);
+            for (int p = 0; p < pa->argc; p++) {
+                char *replaced = strrep(pa->argv[p], in_pipe->port, in_port_fs);
+                pa->argv[p] = replaced;
+            }
+        }
+    }
+    for (int q = 0; q < (int)pf->nodes->length; q++) {
+        struct p4_node *po = pf->nodes->nodes[q];
+        if (po->in_pipes && pipe_array_close(po->in_pipes) < 0) {
+            perror("close_pipe failed");
+        }
+        if (po->out_pipes && pipe_array_close(po->out_pipes) < 0) {
+            perror("close_pipe failed");
+        }
+    }
+    if (def_sin == 1) {
+        close(STDIN_FILENO);
+    }
+    if (def_sout == 1) {
+        close(STDOUT_FILENO);
+    }
+    PRINT_DEBUG("Node %s about to exec\n", pn->id);
+    execvp(pa->argv[0], pa->argv);
+}
+
 int build_nodes(struct p4_file *pf, struct event_base *eb) {
     for (int i=0; i < (int)pf->nodes->length; i++) {
         struct p4_node *pn = pf->nodes->nodes[i];
@@ -334,69 +388,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                 perror("forking process failed");
             }
             else if (pid == 0) { // child
-                struct p4_args *pa = args_list_new(pn->cmd);
-                pid_t ppid = getppid();
-                int def_sin = 1;
-                int def_sout = 1;
-                for (int m = 0; m < (int)pn->out_pipes->length; m++) {
-                    struct pipe *out_pipe = pn->out_pipes->pipes[m];
-                    if (strcmp(out_pipe->port, "-") == 0) {
-                        if (def_sout == 0) {
-                            // TODO this means that another edge has already changed this node's
-                            // stdout. This is an invalid graph.
-                        }
-                        else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
-                            perror("dup2 failed");
-                        }
-                        def_sout = 0;
-                    }
-                    else {
-                        char *out_port_fs = calloc(50u, sizeof(*out_port_fs));
-                        sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd);
-                        for (int n = 0; n < pa->argc; n++) {
-                            char *replaced = strrep(pa->argv[n], out_pipe->port, out_port_fs);
-                            pa->argv[n] = replaced;
-                        }
-                    }
-                }
-                for (int o = 0; o < (int)pn->in_pipes->length; o++) {
-                    struct pipe *in_pipe = pn->in_pipes->pipes[o];
-                    if (strcmp(in_pipe->port, "-") == 0) {
-                        if (def_sin == 0) {
-                            // TODO this means that another edge has already changed this node's
-                            // stdout. This is an invalid graph.
-                        }
-                        else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
-                            perror("dup2 failed");
-                        }
-                        def_sin = 0;
-                    }
-                    else {
-                        char *in_port_fs = calloc(20u, sizeof(*in_port_fs));
-                        sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd);
-                        for (int p = 0; p < pa->argc; p++) {
-                            char *replaced = strrep(pa->argv[p], in_pipe->port, in_port_fs);
-                            pa->argv[p] = replaced;
-                        }
-                    }
-                }
-                for (int q = 0; q < (int)pf->nodes->length; q++) {
-                    struct p4_node *po = pf->nodes->nodes[q];
-                    if (po->in_pipes && pipe_array_close(po->in_pipes) < 0) {
-                        perror("close_pipe failed");
-                    }
-                    if (po->out_pipes && pipe_array_close(po->out_pipes) < 0) {
-                        perror("close_pipe failed");
-                    }
-                }
-                if (def_sin == 1) {
-                    close(STDIN_FILENO);
-                }
-                if (def_sout == 1) {
-                    close(STDOUT_FILENO);
-                }
-                PRINT_DEBUG("Node %s about to exec\n", pn->id);
-                execvp(pa->argv[0], pa->argv);
+                run_node(pf, pn);
             } // end child
             else {
                 pn->pid = pid;
@@ -419,7 +411,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    dev_null = open("/dev/null", O_WRONLY);
+    fd_dev_null = open("/dev/null", O_WRONLY);
     atexit(close_dev_null);
 
     struct p4_file *pf = p4_file_new(argv[1]);

@@ -202,6 +202,26 @@ void free_p4_node_array(struct p4_node_array *nodes) {
     free(nodes);
 }
 
+struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
+    for (int i = 0; i < (int)pf->nodes->length; i++) {
+        struct p4_node *pn = pf->nodes->nodes[i];
+        if (strncmp(pn->id, id, strlen(id) + 1) == 0) {
+            return pn;
+        }
+    }
+    return NULL;
+}
+
+struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid) {
+    for (int i = 0; i < (int)pf->nodes->length; i++) {
+        struct p4_node *pn = pf->nodes->nodes[i];
+        if (pid == pn->pid) {
+            return pn;
+        }
+    }
+    return NULL;
+}
+
 int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     json_incref(node);
     if (!json_is_object(node)) {

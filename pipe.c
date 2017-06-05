@@ -26,6 +26,15 @@ struct pipe *pipe_new(char *port, char *edge_id) {
     return new_pipe;
 }
 
+struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
+    for (int i = 0; i < (int)pa->length; i++) {
+        if (strcmp(pa->pipes[i]->edge_id, edge_id) == 0) {
+            return pa->pipes[i];
+        }
+    }
+    return NULL;
+}
+
 struct pipe_array *pipe_array_new(void) {
     struct pipe_array *pa = malloc(sizeof(*pa));
     pa->length = 0u;

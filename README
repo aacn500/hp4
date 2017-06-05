@@ -1,3 +1,0 @@
-helpful valgrind command:
-
-  make debug && valgrind  --num-callers=20 --main-stacksize=22000 --leak-check=full --show-leak-kinds=all bin/hp4 examples/run.json > vg 2>&1

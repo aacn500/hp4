@@ -14,6 +14,8 @@ struct pipe_array {
     size_t length;
 };
 
+struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id);
+
 struct pipe_array *pipe_array_new(void);
 
 int pipe_array_append_new(struct pipe_array *pa, char *port, char *edge_id);
