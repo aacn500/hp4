@@ -50,53 +50,50 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("killing child...\n");
     struct sigchld_args *sa = arg;
     int status;
-    while (1) {
-        pid_t p = waitpid(-1, &status, WNOHANG);
-        if (p == -1) {
-            if (errno == EINTR) {
-                continue;
-            }
-            PRINT_DEBUG("Got an unexpected error while waiting for child to terminate: %d\n", errno);
-            break;
+    pid_t p = waitpid(-1, &status, WNOHANG);
+    if (p == -1) {
+        PRINT_DEBUG("Got an unexpected error while waiting for child to terminate: %s\n", strerror(errno));
+    }
+    else if (p == 0) {
+        PRINT_DEBUG("waitpid for result 0\n");
+    }
+    else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
+        ++children_gone;
+        PRINT_DEBUG("%dth child process ended\n", children_gone);
+        struct p4_node *pn = find_node_by_pid(sa->pf, p);
+        if (pn == NULL) {
+            PRINT_DEBUG("No node found with pid %u\n", p);
+            return;
         }
-        else if (p == 0) {
-            break;
+        if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
+            PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
+                    pn->id, strerror(errno));
         }
-        else if (WIFEXITED(status)) {
-            children_gone++;
-            PRINT_DEBUG("%dth child process ended\n", children_gone);
-            struct p4_node *pn = find_node_by_pid(sa->pf, p);
-            if (pn == NULL) {
-                PRINT_DEBUG("No node found with pid %u\n", p);
-                return;
-            }
-            if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
-                PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
-                        pn->id, strerror(errno));
-            }
-            pn->ended = 1;
+        pn->ended = 1;
 
-            if (pn->out_pipes) {
-                for (int i = 0; i < (int)pn->out_pipes->length; i++) {
-                    if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
-                        PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
-                                pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
-                    }
+        if (pn->out_pipes) {
+            for (int i = 0; i < (int)pn->out_pipes->length; i++) {
+                if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
+                    PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
+                            pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
                 }
             }
+        }
 
-            for (int j = 0; j < (int)sa->pf->edges->length; j++) {
-                if (strcmp(sa->pf->edges->edges[j]->to, pn->id) == 0) {
-                    fprintf(stderr, "edge %s finished after splicing %ld bytes\n",
-                           sa->pf->edges->edges[j]->id,
-                           sa->pf->edges->edges[j]->bytes_spliced);
-                }
-            }
-
-            if (children_gone == (int)sa->pf->nodes->length) {
-                event_base_loopexit(sa->eb, NULL);
+        for (int j = 0; j < (int)sa->pf->edges->length; j++) {
+            if (strcmp(sa->pf->edges->edges[j]->to, pn->id) == 0) {
+                fprintf(stderr, "edge %s finished after splicing %ld bytes\n",
+                       sa->pf->edges->edges[j]->id,
+                       sa->pf->edges->edges[j]->bytes_spliced);
             }
         }
+
+        if (children_gone == (int)sa->pf->nodes->length) {
+            event_base_loopexit(sa->eb, NULL);
+        }
+    }
+    else if (WIFSIGNALED(status)) {
+        PRINT_DEBUG("child was signaled by %d\n", WTERMSIG(status));
     }
 }
 
