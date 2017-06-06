@@ -15,7 +15,6 @@
 #include "parser.h"
 #include "pipe.h"
 
-int n_children_exited = 0;
 int fd_dev_null = -1;
 
 void close_dev_null(void) {
@@ -36,6 +35,7 @@ struct event_args {
 struct sigchld_args {
     struct p4_file *pf;
     struct event_base *eb;
+    int n_children_exited;
 };
 
 
@@ -70,8 +70,8 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             break;
         }
         else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
-            ++n_children_exited;
-            PRINT_DEBUG("%dth child process ended\n", n_children_exited);
+            ++sa->n_children_exited;
+            PRINT_DEBUG("%dth child process ended\n", sa->n_children_exited);
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
             if (pn == NULL) {
                 PRINT_DEBUG("No node found with pid %u\n", p);
@@ -100,7 +100,7 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
                 }
             }
 
-            if (n_children_exited == (int)sa->pf->nodes->length) {
+            if (sa->n_children_exited == (int)sa->pf->nodes->length) {
                 event_base_loopexit(sa->eb, NULL);
             }
         }
@@ -450,6 +450,7 @@ int main(int argc, char **argv) {
     }
     sa->pf = pf;
     sa->eb = eb;
+    sa->n_children_exited = 0;
 
     struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, sa);
     if (sigchldev == NULL) {
