@@ -14,6 +14,7 @@
 #include "hp4.h"
 #include "parser.h"
 #include "pipe.h"
+#include "stats.h"
 
 int fd_dev_null = -1;
 
@@ -38,6 +39,9 @@ struct sigchld_args {
     int n_children_exited;
 };
 
+struct stats_ev_args {
+    struct p4_file *pf;
+};
 
 void sigint_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("\b\bHandling sigint...\n");
@@ -205,6 +209,12 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
     for (int j = 0; j < (int)ea->in_pipes->length; j++) {
         ea->in_pipes->pipes[j]->bytes_written -= bytes;
     }
+}
+
+void statsCb(evutil_socket_t fd, short what, void *arg) {
+    struct stats_ev_args *sa = arg;
+    struct p4_file *pf = sa->pf;
+    create_stats_file(pf);
 }
 
 int build_edges(struct p4_file *pf) {
@@ -463,6 +473,7 @@ int main(int argc, char **argv) {
     }
     if (event_add(sigchldev, NULL) < 0) {
         PRINT_DEBUG("Failed to add sigchld event\n");
+        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -471,6 +482,7 @@ int main(int argc, char **argv) {
     }
 
     if (pf == NULL) {
+        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -479,6 +491,7 @@ int main(int argc, char **argv) {
     }
 
     if (build_edges(pf) == -1) {
+        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -487,6 +500,7 @@ int main(int argc, char **argv) {
     }
 
     if (build_nodes(pf, eb) == -1) {
+        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -494,8 +508,53 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    event_base_dispatch(eb);
+    struct stats_ev_args *sea = malloc(sizeof(*sea));
+    if (sea == NULL) {
+        free(sa);
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    sea->pf = pf;
 
+    struct event *dump_stats = event_new(eb, -1, EV_PERSIST, statsCb, sea);
+    if (dump_stats == NULL) {
+        PRINT_DEBUG("failed to create stats dump event.\n");
+        free(sea);
+        free(sa);
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    struct timeval delay = {1, 0};
+    if (event_add(dump_stats, &delay) < 0) {
+        event_free(dump_stats);
+        free(sea);
+        free(sa);
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+
+    if (event_base_dispatch(eb) < 0) {
+        event_free(dump_stats);
+        free(sea);
+        free(sa);
+        event_free(sigchldev);
+        event_free(sigintev);
+        event_base_free(eb);
+        free_p4_file(pf);
+        return 1;
+    }
+    statsCb(0, 0, sea);
+
+    event_free(dump_stats);
     event_free(sigintev);
     event_free(sigchldev);
     event_base_free(eb);
