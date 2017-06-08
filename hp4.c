@@ -507,22 +507,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    struct sigchld_args *sa = malloc(sizeof(*sa));
-    if (sa == NULL) {
-        PRINT_DEBUG("Failed to allocate memory for sigchld_args\n");
-        event_free(sigintev);
-        event_base_free(eb);
-        free_p4_file(pf);
-        return 1;
-    }
-    sa->pf = pf;
-    sa->eb = eb;
-    sa->n_children_exited = 0;
+    struct sigchld_args sa;
+    sa.pf = pf;
+    sa.eb = eb;
+    sa.n_children_exited = 0;
 
-    struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, sa);
+    struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, &sa);
     if (sigchldev == NULL) {
         PRINT_DEBUG("Failed to create sigchld event\n");
-        free(sa);
         event_free(sigintev);
         event_base_free(eb);
         free_p4_file(pf);
@@ -530,7 +522,6 @@ int main(int argc, char **argv) {
     }
     if (event_add(sigchldev, NULL) < 0) {
         PRINT_DEBUG("Failed to add sigchld event\n");
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -539,7 +530,6 @@ int main(int argc, char **argv) {
     }
 
     if (pf == NULL) {
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -548,7 +538,6 @@ int main(int argc, char **argv) {
     }
 
     if (build_edges(pf) == -1) {
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -557,7 +546,6 @@ int main(int argc, char **argv) {
     }
 
     if (build_nodes(pf, eb) == -1) {
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -565,16 +553,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    struct stats_ev_args *sea = malloc(sizeof(*sea));
-    if (sea == NULL) {
-        free(sa);
-        event_free(sigchldev);
-        event_free(sigintev);
-        event_base_free(eb);
-        free_p4_file(pf);
-        return 1;
-    }
-    sea->pf = pf;
+    struct stats_ev_args sea;
+    sea.pf = pf;
+
     long interval_secs, interval_ms, interval_us;
     if (args.stats_interval) {
         interval_ms = strtol(args.stats_interval, NULL, 10);
@@ -586,11 +567,9 @@ int main(int argc, char **argv) {
     interval_secs = interval_ms / 1000;
     interval_us = (interval_ms % 1000) * 1000;
 
-    struct event *dump_stats = event_new(eb, -1, EV_PERSIST, statsCb, sea);
+    struct event *dump_stats = event_new(eb, -1, EV_PERSIST, statsCb, &sea);
     if (dump_stats == NULL) {
         PRINT_DEBUG("failed to create stats dump event.\n");
-        free(sea);
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -600,8 +579,6 @@ int main(int argc, char **argv) {
     struct timeval delay = {interval_secs, interval_us};
     if (event_add(dump_stats, &delay) < 0) {
         event_free(dump_stats);
-        free(sea);
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -611,22 +588,20 @@ int main(int argc, char **argv) {
 
     if (event_base_dispatch(eb) < 0) {
         event_free(dump_stats);
-        free(sea);
-        free(sa);
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
         free_p4_file(pf);
         return 1;
     }
-    statsCb(0, 0, sea);
+
+    statsCb(0, 0, &sea);
 
     event_free(dump_stats);
     event_free(sigintev);
     event_free(sigchldev);
     event_base_free(eb);
     free_p4_file(pf);
-    free(sa);
 
     return 0;
 }
