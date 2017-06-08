@@ -8,7 +8,7 @@
 #include "parser.h"
 
 int create_stats_file(struct p4_file *pf) {
-    json_t *json_byte_counters = json_array();
+    json_t *json_byte_counters = json_object();
     if (json_byte_counters == NULL) {
         return -1;
     }
@@ -20,22 +20,8 @@ int create_stats_file(struct p4_file *pf) {
             return -1;
         }
 
-        json_t *json_byte_count = json_object();
-        if (json_byte_count == NULL) {
+        if (json_object_set_new(json_byte_counters, pf->edges->edges[i]->id, json_bytes) < 0) {
             json_decref(json_bytes);
-            json_decref(json_byte_counters);
-            return -1;
-        }
-
-        if (json_object_set_new(json_byte_count, pf->edges->edges[i]->id, json_bytes) < 0) {
-            json_decref(json_byte_count);
-            json_decref(json_bytes);
-            json_decref(json_byte_counters);
-            return -1;
-        }
-
-        if (json_array_append_new(json_byte_counters, json_byte_count) < 0) {
-            json_decref(json_byte_count);
             json_decref(json_byte_counters);
             return -1;
         }

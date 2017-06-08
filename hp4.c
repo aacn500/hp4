@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -15,6 +16,8 @@
 #include "parser.h"
 #include "pipe.h"
 #include "stats.h"
+
+#define DEFAULT_INTERVAL 1000
 
 int fd_dev_null = -1;
 
@@ -415,16 +418,70 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
     return 0;
 }
 
+void usage(char **argv) {
+    printf("Usage: %s [OPTIONS] file\n", argv[0]);
+    printf("\n");
+    printf("  -h, --help      display this help and exit\n");
+    printf("  -i, --interval  set time in milliseconds between dumping stats\n");
+    printf("                    to stdout; defaults to %d\n", DEFAULT_INTERVAL);
+    printf("  -f, --file      file containing json definition of process graph\n");
+    return;
+}
+
+int get_args(int argc, char **argv, struct hp4_args *args) {
+    static struct option long_options[] =
+    {
+        {"interval", required_argument, 0, 'i'},
+        {"file",     required_argument, 0, 'f'},
+        {"help",     no_argument,       0, 'h'},
+        {0,          0,                 0,  0 }
+    };
+    char c;
+    int option_index = 0;
+    while ((c = getopt_long(argc, argv, "i:f:h", long_options, &option_index)) >= 0) {
+        switch (c) {
+            case 'i':
+                args->stats_interval = optarg;
+                break;
+            case 'f':
+                args->graph_file = optarg;
+                break;
+            case 'h':
+                args->help = 1;
+                break;
+            default:
+                break;
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "specify json filename\n");
+    struct hp4_args args;
+    args.stats_interval = NULL;
+    args.graph_file = NULL;
+    args.help = 0;
+
+    if (get_args(argc, argv, &args) < 0) {
+        usage(argv);
+        return 1;
+    }
+
+    if (args.help == 1) {
+        usage(argv);
+        return 0;
+    }
+
+    if (args.graph_file == NULL) {
+        printf("Did not specify a file\n");
+        usage(argv);
         return 1;
     }
 
     fd_dev_null = open("/dev/null", O_WRONLY);
     atexit(close_dev_null);
 
-    struct p4_file *pf = p4_file_new(argv[1]);
+    struct p4_file *pf = p4_file_new(args.graph_file);
     if (pf == NULL) {
         return 1;
     }
@@ -518,6 +575,16 @@ int main(int argc, char **argv) {
         return 1;
     }
     sea->pf = pf;
+    long interval_secs, interval_ms, interval_us;
+    if (args.stats_interval) {
+        interval_ms = strtol(args.stats_interval, NULL, 10);
+    }
+    else {
+        interval_ms = DEFAULT_INTERVAL;
+    }
+
+    interval_secs = interval_ms / 1000;
+    interval_us = (interval_ms % 1000) * 1000;
 
     struct event *dump_stats = event_new(eb, -1, EV_PERSIST, statsCb, sea);
     if (dump_stats == NULL) {
@@ -530,7 +597,7 @@ int main(int argc, char **argv) {
         free_p4_file(pf);
         return 1;
     }
-    struct timeval delay = {1, 0};
+    struct timeval delay = {interval_secs, interval_us};
     if (event_add(dump_stats, &delay) < 0) {
         event_free(dump_stats);
         free(sea);
