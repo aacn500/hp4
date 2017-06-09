@@ -10,4 +10,12 @@
 #endif /* HP4_DEBUG */
 #endif /* PRINT_DEBUG */
 
+struct hp4_args {
+    char *stats_interval;
+
+    char *graph_file;
+
+    char help;
+};
+
 #endif /* HP4_HP4_H */

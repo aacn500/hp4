@@ -1,4 +1,11 @@
-.PHONY: all clean debug
+sources = hp4.c parser.c pipe.c stats.c
+defines = -D_GNU_SOURCE
+libs = -levent -ljansson
+warnings = -Wall -Wextra -Wno-unused-parameter
+c_flags = $(defines) $(libs) $(warnings)
+binary = bin/hp4
+
+.PHONY: all clean debug verbose
 
 all: bin/hp4
 
@@ -6,10 +13,13 @@ clean:
 	rm -rf bin
 
 debug: bin
-	gcc -Wall -g -v -da -Q hp4.c parser.c pipe.c -o bin/hp4 -levent -ljansson -Og -D_GNU_SOURCE # -DHP4_DEBUG
+	gcc -g -v -da -Q $(sources) -o $(binary) -Og $(c_flags) # -DHP4_DEBUG
 
 bin:
 	mkdir -p bin
 
-bin/hp4: bin hp4.c parser.c pipe.c
-	gcc -Wall -Wextra -Wno-unused-parameter hp4.c parser.c pipe.c -o bin/hp4 -levent -ljansson -D_GNU_SOURCE
+verbose: bin $(sources)
+	gcc $(sources) -o $(binary) $(c_flags) -DHP4_DEBUG
+
+$(binary): bin $(sources)
+	gcc $(sources) -o $(binary) $(c_flags)
