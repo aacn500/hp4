@@ -243,6 +243,10 @@ int build_edges(struct p4_file *pf) {
             }
             if (from->listening_edges == NULL) {
                 from->listening_edges = malloc(sizeof(*from->listening_edges));
+                if (from->listening_edges == NULL) {
+                    PRINT_DEBUG("Failed to allocate memory\n");
+                    return -1;
+                }
                 from->listening_edges->edges = NULL;
                 from->listening_edges->length = 0u;
             }
@@ -277,7 +281,7 @@ int build_edges(struct p4_file *pf) {
     return 0;
 }
 
-void run_node(struct p4_file *pf, struct p4_node *pn) {
+int run_node(struct p4_file *pf, struct p4_node *pn) {
     struct p4_args *pa = args_list_new(pn->cmd);
     pid_t ppid = getppid();
     int def_sin = 1;
@@ -292,11 +296,15 @@ void run_node(struct p4_file *pf, struct p4_node *pn) {
             }
             else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
                 perror("dup2 failed");
+                return 1;
             }
             def_sout = 0;
         }
         else {
             char *out_port_fs = calloc(50u, sizeof(*out_port_fs));
+            if (out_port_fs == NULL) {
+                return 1;
+            }
             sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd);
             for (int n = 0; n < pa->argc; n++) {
                 char *replaced = strrep(pa->argv[n], out_pipe->port, out_port_fs);
@@ -311,14 +319,19 @@ void run_node(struct p4_file *pf, struct p4_node *pn) {
             if (def_sin == 0) {
                 // TODO this means that another edge has already changed this node's
                 // stdout. This is an invalid graph.
+                return 1;
             }
             else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
                 perror("dup2 failed");
+                return 1;
             }
             def_sin = 0;
         }
         else {
             char *in_port_fs = calloc(20u, sizeof(*in_port_fs));
+            if (in_port_fs == NULL) {
+                return 1;
+            }
             sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd);
             for (int p = 0; p < pa->argc; p++) {
                 char *replaced = strrep(pa->argv[p], in_pipe->port, in_port_fs);
@@ -330,9 +343,11 @@ void run_node(struct p4_file *pf, struct p4_node *pn) {
         struct p4_node *po = pf->nodes->nodes[q];
         if (po->in_pipes && pipe_array_close(po->in_pipes) < 0) {
             perror("close_pipe failed");
+            return 1;
         }
         if (po->out_pipes && pipe_array_close(po->out_pipes) < 0) {
             perror("close_pipe failed");
+            return 1;
         }
     }
     if (def_sin == 1) {
@@ -343,6 +358,7 @@ void run_node(struct p4_file *pf, struct p4_node *pn) {
     }
     PRINT_DEBUG("Node %s about to exec\n", pn->id);
     execvp(pa->argv[0], pa->argv);
+    return 0;
 }
 
 int build_nodes(struct p4_file *pf, struct event_base *eb) {
@@ -368,6 +384,9 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     ea->in_pipes = pipe_array_new();
                     ea->bytes_spliced = calloc(pn->listening_edges->length,
                             sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
+                    if (ea->bytes_spliced == NULL) {
+                        return -1;
+                    }
 
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
                         struct p4_edge *edge = pn->listening_edges->edges[k];
@@ -401,7 +420,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                 perror("forking process failed");
             }
             else if (pid == 0) { // child
-                run_node(pf, pn);
+                return run_node(pf, pn);
             } // end child
             else {
                 pn->pid = pid;

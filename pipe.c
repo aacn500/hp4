@@ -37,6 +37,9 @@ struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
 
 struct pipe_array *pipe_array_new(void) {
     struct pipe_array *pa = malloc(sizeof(*pa));
+    if (pa == NULL) {
+        return NULL;
+    }
     pa->length = 0u;
     pa->pipes = NULL;
     return pa;
@@ -47,12 +50,18 @@ int pipe_array_append_new(struct pipe_array *pa, char *port, char *edge_id) {
 }
 
 int pipe_array_append(struct pipe_array *pa, struct pipe *pipe) {
-    pa->length++;
-    if (pa->length == 1u) {
-        pa->pipes = malloc(sizeof(pa->pipes));
+    if (++pa->length == 1u) {
+        pa->pipes = malloc(sizeof(*pa->pipes));
+        if (pa->pipes == NULL) {
+            return -1;
+        }
     }
     else {
-        pa->pipes = realloc(pa->pipes, pa->length * sizeof(pa->pipes));
+        struct pipe **realloced_pipes = realloc(pa->pipes, pa->length * sizeof(*pa->pipes));
+        if (realloced_pipes == NULL) {
+            return -1;
+        }
+        pa->pipes = realloced_pipes;
     }
     pa->pipes[pa->length - 1] = pipe;
     return 0;

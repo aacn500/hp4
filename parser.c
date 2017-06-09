@@ -17,6 +17,9 @@
  * Adapted from https://stackoverflow.com/a/26201820 */
 struct p4_args *args_list_new(const char *input) {
     char *input_cpy = malloc((strlen(input) + 1) * sizeof(*input_cpy));
+    if (input_cpy == NULL) {
+        return NULL;
+    }
     strcpy(input_cpy, input);
     char *token = input_cpy;
     char *current = input_cpy;
@@ -73,7 +76,6 @@ struct p4_args *args_list_new(const char *input) {
                     return NULL;
                 }
                 argv = nargv;
-                /* TODO correctly handle realloc failure */
                 argv[argc-1] = current;
                 current = token + 1;
             }
@@ -96,6 +98,11 @@ struct p4_args *args_list_new(const char *input) {
     }
 
     struct p4_args *pa = malloc(sizeof(*pa));
+    if (pa == NULL) {
+        free(argv);
+        free(input_cpy);
+        return NULL;
+    }
     pa->argc = argc;
     pa->argv = argv;
     return pa;
@@ -103,29 +110,54 @@ struct p4_args *args_list_new(const char *input) {
 
 char **parse_edge_string(const char *edge_ro) {
     char **edge_strings = malloc(2 * sizeof(*edge_strings));
+    if (edge_strings == NULL) {
+        return NULL;
+    }
     char *port_ro = strchr(edge_ro, PORT_DELIMITER);
     if (port_ro == NULL) {
         // Did not find any instance of PORT_DELIMITER;
         // use default of "-", to represent std(in|out).
         edge_strings[0] = malloc((strlen(edge_ro) + 1) * sizeof(**edge_strings));
-        strcpy(edge_strings[0], edge_ro);
+        if (edge_strings[0] == NULL) {
+            free(edge_strings);
+            return NULL;
+        }
         edge_strings[1] = malloc((sizeof("-")));
+        if (edge_strings[1] == NULL) {
+            free(edge_strings[0]);
+            free(edge_strings);
+            return NULL;
+        }
+
+        strcpy(edge_strings[0], edge_ro);
         strcpy(edge_strings[1], "-");
         return edge_strings;
     }
-    port_ro++;
+
     // there should only be one instance of PORT_DELIMITER in the string
-    if (strchr(port_ro, PORT_DELIMITER) != NULL) {
+    if (strchr(++port_ro, PORT_DELIMITER) != NULL) {
         free(edge_strings);
         return NULL;
     }
     size_t id_len = port_ro - edge_ro;
     size_t port_len = strlen(port_ro) + 1;
+
     edge_strings[0] = malloc(id_len * sizeof(**edge_strings));
+    if (edge_strings[0] == NULL) {
+        free(edge_strings);
+        return NULL;
+    }
     edge_strings[1] = malloc(port_len * sizeof(**edge_strings));
+    if (edge_strings[1] == NULL) {
+        free(edge_strings[0]);
+        free(edge_strings);
+        return NULL;
+    }
+
     strncpy(edge_strings[0], edge_ro, id_len);
     edge_strings[0][id_len-1] = 0;
     strcpy(edge_strings[1], port_ro);
+
     return edge_strings;
 }
 
@@ -146,6 +178,10 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
 
     if ((json_id = json_object_get(edge, "id"))) {
         parsed_edge->id = malloc((json_string_length(json_id) + 1) * sizeof(char));
+        if (parsed_edge->id == NULL) {
+            json_decref(edge);
+            return -1;
+        }
         strcpy(parsed_edge->id, json_string_value(json_id));
     }
     else {
@@ -216,11 +252,27 @@ struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
     }
 
     struct p4_edge_array *edge_arr = malloc(sizeof(*edge_arr));
+    if (edge_arr == NULL) {
+        json_decref(edges);
+        return NULL;
+    }
     edge_arr->length = length;
     edge_arr->edges = calloc(edge_arr->length, sizeof(*edge_arr->edges));
+    if (edge_arr->edges == NULL) {
+        free(edge_arr);
+        return NULL;
+    }
 
     for (int i = 0; i < (int)edge_arr->length; i++) {
         edge_arr->edges[i] = calloc(1u, sizeof(**edge_arr->edges));
+        if (edge_arr->edges[i] == NULL) {
+            for (int j = 0; j < i; i++) {
+                free(edge_arr->edges[j]);
+            }
+            free(edge_arr->edges);
+            free(edge_arr);
+            return NULL;
+        }
 
         if (parse_p4_edge(json_array_get(edges, i), edge_arr->edges[i]) < 0) {
             fprintf(stderr, "Failed to parse edge\n");
@@ -295,6 +347,9 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     if ((json_id = json_object_get(node, "id"))) {
         parsed_node->id = malloc((json_string_length(json_id)+1) * sizeof(char));
+        if (parsed_node->id == NULL) {
+            return -1;
+        }
         strcpy(parsed_node->id, json_string_value(json_id));
     }
     else {
@@ -302,6 +357,10 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     if ((json_type = json_object_get(node, "type"))) {
         parsed_node->type = malloc((json_string_length(json_type)+1) * sizeof(char));
+        if (parsed_node->type == NULL) {
+            free(parsed_node->id);
+            return -1;
+        }
         strcpy(parsed_node->type, json_string_value(json_type));
     }
     else {
@@ -309,6 +368,11 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     if ((json_subtype = json_object_get(node, "subtype"))) {
         parsed_node->subtype = malloc((json_string_length(json_subtype)+1) * sizeof(char));
+        if (parsed_node->subtype == NULL) {
+            free(parsed_node->type);
+            free(parsed_node->id);
+            return -1;
+        }
         strcpy(parsed_node->subtype, json_string_value(json_subtype));
     }
     else {
@@ -316,6 +380,12 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     if ((json_cmd = json_object_get(node, "cmd"))) {
         parsed_node->cmd = malloc((json_string_length(json_cmd)+1) * sizeof(char));
+        if (parsed_node->cmd == NULL) {
+            free(parsed_node->subtype);
+            free(parsed_node->type);
+            free(parsed_node->id);
+            return -1;
+        }
         strcpy(parsed_node->cmd, json_string_value(json_cmd));
     }
     else {
@@ -323,6 +393,13 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     if ((json_name = json_object_get(node, "name"))) {
         parsed_node->name = malloc((json_string_length(json_name)+1) * sizeof(char));
+        if (parsed_node->name == NULL) {
+            free(parsed_node->cmd);
+            free(parsed_node->subtype);
+            free(parsed_node->type);
+            free(parsed_node->id);
+            return -1;
+        }
         strcpy(parsed_node->name, json_string_value(json_name));
     }
     else {
@@ -367,11 +444,26 @@ struct p4_node_array *p4_node_array_new(json_t *nodes, size_t length) {
     }
 
     struct p4_node_array *node_arr = malloc(sizeof(*node_arr));
+    if (node_arr == NULL) {
+        return NULL;
+    }
     node_arr->length = length;
     node_arr->nodes = calloc(node_arr->length, sizeof(*node_arr->nodes));
+    if (node_arr->nodes == NULL) {
+        free(node_arr);
+        return NULL;
+    }
 
     for (int i = 0; i < (int)node_arr->length; i++) {
         node_arr->nodes[i] = calloc(1u, sizeof(**node_arr->nodes));
+        if (node_arr->nodes[i] == NULL) {
+            for (int j = 0; j < i; i++) {
+                free(node_arr->nodes[j]);
+            }
+            free(node_arr->nodes);
+            free(node_arr);
+            return NULL;
+        }
 
         if (parse_p4_node(json_array_get(nodes, i), node_arr->nodes[i]) < 0) {
             fprintf(stderr, "Failed to parse node\n");
@@ -413,6 +505,9 @@ struct p4_file *p4_file_new(const char *filename) {
     }
 
     struct p4_file *pf = malloc(sizeof(*pf));
+    if (pf == NULL) {
+        return NULL;
+    }
 
     pf->edges = p4_edge_array_new(edges, json_array_size(edges));
     if (pf->edges == NULL) {
