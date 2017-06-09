@@ -13,35 +13,91 @@
 
 #define PORT_DELIMITER ':'
 
-/*
- * Splits a cmd such as `grep -v word` into an array of strings,
- * where the last element is NULL, as is expected by exec() functions.
- */
-struct p4_args *args_list_new(const char *args) {
-    char *tmp_args = malloc((strlen(args) + 1) * sizeof(*tmp_args));
-    strcpy(tmp_args, args);
-    char **argv = NULL;
-    char *p = strtok(tmp_args, " ");
+/* Split arg string on spaces, except when between openblock,closeblock chars
+ * Adapted from https://stackoverflow.com/a/26201820 */
+struct p4_args *args_list_new(const char *input) {
+    char *input_cpy = malloc((strlen(input) + 1) * sizeof(*input_cpy));
+    strcpy(input_cpy, input);
+    char *token = input_cpy;
+    char *current = input_cpy;
+    char *block = NULL;
+
+    /* NB. each block-closing character MUST be placed at the same index as
+     *     its matching block-opening character to show the relationship.
+     * NB. nested blocks will not be respected.
+     * Separated openblock + closeblock as they could in future be extended
+     * to allow e.g. parentheses as block characters. */
+    char openblock[] =  "\"'";
+    char closeblock[] = "\"'";
+    const char delimiter = ' ';
+
+    char in_block = 0;
+    int block_idx = -1;
+
     int argc = 0;
+    char **argv = NULL;
 
-    while (p) {
-        argv = realloc(argv, sizeof(*argv) * ++argc);
-
-        if (argv == NULL)
-            // realloc failed
-            return NULL;
-
-        argv[argc-1] = p;
-
-        p = strtok(NULL, " ");
+    if (input == NULL) {
+        return NULL;
     }
-    argv = realloc(argv, sizeof(*argv) * (argc + 1));
-    argv[argc] = NULL;
+
+    while (*token != '\0') {
+        if (!in_block && (block_idx >= 0)) {
+            /* TODO this should not happen; test + fail loudly */
+        }
+        else if (in_block && (*token == closeblock[block_idx])) {
+            in_block = 0;
+            block_idx = -1;
+            *token = delimiter;
+            --token;
+        }
+        else if (!in_block && ((block = strchr(openblock, *token)) != NULL)) {
+            in_block = 1;
+            /* get index of character which is opening block */
+            block_idx = block - openblock;
+            /* don't add quote mark to final string */
+            if (current == token)
+                ++current;
+        }
+        else if (!in_block && *token == delimiter) {
+            if (current == token) {
+                /* skip adding empty strings to argv */
+                ++current;
+            }
+            else {
+                *token = '\0';
+                char **nargv = realloc(argv, sizeof(*argv) * ++argc);
+                if (nargv == NULL) {
+                    free(argv);
+                    free(input_cpy);
+                    return NULL;
+                }
+                argv = nargv;
+                /* TODO correctly handle realloc failure */
+                argv[argc-1] = current;
+                current = token + 1;
+            }
+        }
+        ++token;
+    }
+    if (in_block) {
+        /* TODO handle exiting from loop with in_block == 1 */
+    }
+    else {
+        char **nargv = realloc(argv, sizeof(*argv) * (++argc + 1));
+        if (nargv == NULL) {
+            free(argv);
+            free(input_cpy);
+            return NULL;
+        }
+        argv = nargv;
+        argv[argc-1] = current;
+        argv[argc] = NULL;
+    }
 
     struct p4_args *pa = malloc(sizeof(*pa));
     pa->argc = argc;
     pa->argv = argv;
-
     return pa;
 }
 
