@@ -166,12 +166,14 @@ char *strrep(const char *original, const char *replace, const char *with) {
     return result;
 }
 
-void pipeCb(evutil_socket_t fd, short what, void *arg) {
+
+void readableCb(evutil_socket_t fd, short what, void *arg) {
     struct event_args *ea = arg;
     if ((what & EV_READ) == 0) {
         return;
     }
     size_t lowest_bytes_written = INT_MAX;
+    int got_eof = 1;
     for (int i = 0; i < (int)ea->in_pipes->length; i++) {
         // tee/splice algorithm based on answer in
         // https://stackoverflow.com/a/14200975
@@ -182,10 +184,16 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
                                 ea->in_pipes->pipes[i]->write_fd,
                                 4096,
                                 SPLICE_F_NONBLOCK);
+
             if (bytes < 0) {
-                ea->in_pipes->pipes[i]->bytes_written = 0;
+                /* TODO Write logic to handle errno... */
+                got_eof = 0;
+                if (errno != EAGAIN) {
+                    PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
+                }
             }
             else if (bytes > 0) {
+                got_eof = 0;
                 ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
                 *ea->bytes_spliced[i] += bytes;
             }
@@ -203,7 +211,8 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
     if (bytes < 0 && errno != EAGAIN) {
         return;
     }
-    if (bytes == 0) {
+    if (got_eof && bytes == 0) {
+        PRINT_DEBUG("Edge at EOF... closing pipes for edge %s\n", ea->out_pipe->edge_id);
         close(ea->out_pipe->read_fd);
         for (int k = 0; k < (int)ea->in_pipes->length; k++) {
             close(ea->in_pipes->pipes[k]->write_fd);
@@ -408,7 +417,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         pipe_array_append(ea->in_pipes, in_pipe);
                     }
                     struct event *readable = event_new(eb, ea->out_pipe->read_fd,
-                                                       EV_READ|EV_PERSIST, pipeCb,
+                                                       EV_READ|EV_PERSIST, readableCb,
                                                        ea);
                     if (event_add(readable, NULL) < 0) {
                         // TODO print something?
