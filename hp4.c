@@ -200,7 +200,7 @@ void pipeCb(evutil_socket_t fd, short what, void *arg) {
                            NULL,
                            lowest_bytes_written,
                            SPLICE_F_NONBLOCK);
-    if (bytes < 0) {
+    if (bytes < 0 && errno != EAGAIN) {
         return;
     }
     if (bytes == 0) {
@@ -291,8 +291,8 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
         if (strcmp(out_pipe->port, "-") == 0) {
             if (def_sout == 0) {
                 // TODO this means that another pipe has already changed this node's
-                // stdout. This is an invalid graph. It also should not happen; two
-                // edges which read stdout should share an out_pipe.
+                // stdout. It should not happen; two edges which read stdout from
+                // same node should share an out_pipe.
             }
             else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
                 perror("dup2 failed");
@@ -317,8 +317,9 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
         struct pipe *in_pipe = pn->in_pipes->pipes[o];
         if (strcmp(in_pipe->port, "-") == 0) {
             if (def_sin == 0) {
-                // TODO this means that another edge has already changed this node's
-                // stdout. This is an invalid graph.
+                // TODO this means that another pipe has already changed this node's
+                // stdin. This should not happen; two edges which read stdin from the
+                // same node should share in_pipe.
                 return 1;
             }
             else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
@@ -381,6 +382,8 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         return -1;
                     }
                     ea->out_pipe = pn->out_pipes->pipes[j];
+                    int read_fd = ea->out_pipe->read_fd;
+                    fcntl(read_fd, F_SETFL, fcntl(read_fd, F_GETFL, NULL) & O_NONBLOCK);
                     ea->in_pipes = pipe_array_new();
                     ea->bytes_spliced = calloc(pn->listening_edges->length,
                             sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
@@ -400,6 +403,8 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                             return -1;
                         }
                         struct pipe *in_pipe = find_pipe_by_edge_id(dest->in_pipes, edge->id);
+                        int write_fd = in_pipe->write_fd;
+                        fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, NULL) & O_NONBLOCK);
                         pipe_array_append(ea->in_pipes, in_pipe);
                     }
                     struct event *readable = event_new(eb, ea->out_pipe->read_fd,
