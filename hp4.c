@@ -174,42 +174,71 @@ void readableCb(evutil_socket_t fd, short what, void *arg) {
     }
     size_t lowest_bytes_written = INT_MAX;
     int got_eof = 1;
-    for (int i = 0; i < (int)ea->in_pipes->length; i++) {
-        // tee/splice algorithm based on answer in
-        // https://stackoverflow.com/a/14200975
-        // FIXME This will hang if processes do not read at same rate...
-        // both processes will need to be within 4KB! Not good...
-        if (ea->in_pipes->pipes[i]->bytes_written == 0) {
-            ssize_t bytes = tee(ea->out_pipe->read_fd,
-                                ea->in_pipes->pipes[i]->write_fd,
-                                4096,
-                                SPLICE_F_NONBLOCK);
-
-            if (bytes < 0) {
-                /* TODO Write logic to handle errno... */
-                got_eof = 0;
-                if (errno != EAGAIN) {
-                    PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
-                }
-            }
-            else if (bytes > 0) {
-                got_eof = 0;
-                ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
-                *ea->bytes_spliced[i] += bytes;
+    ssize_t bytes;
+    if (ea->in_pipes->length == 1u) {
+        bytes = splice(ea->out_pipe->read_fd,
+                       NULL,
+                       ea->in_pipes->pipes[0]->write_fd,
+                       NULL,
+                       4096,
+                       SPLICE_F_NONBLOCK);
+        if (bytes < 0) {
+            got_eof = 0;
+            if (errno != EAGAIN) {
+                PRINT_DEBUG("Failed to splice data: %s\n", strerror(errno));
+                return;
             }
         }
-        if (ea->in_pipes->pipes[i]->bytes_written < lowest_bytes_written) {
-            lowest_bytes_written = ea->in_pipes->pipes[i]->bytes_written;
+        else if (bytes > 0) {
+            got_eof = 0;
+            **ea->bytes_spliced += bytes;
+            (*ea->in_pipes->pipes)->bytes_written = (size_t)bytes;
         }
     }
-    ssize_t bytes = splice(ea->out_pipe->read_fd,
-                           NULL,
-                           fd_dev_null,
-                           NULL,
-                           lowest_bytes_written,
-                           SPLICE_F_NONBLOCK);
-    if (bytes < 0 && errno != EAGAIN) {
-        return;
+    else {
+        for (int i = 0; i < (int)ea->in_pipes->length; i++) {
+            // tee/splice algorithm based on answer in
+            // https://stackoverflow.com/a/14200975
+            // FIXME This will hang if processes do not read at same rate...
+            // both processes will need to be within 4KB! Not good...
+            if (ea->in_pipes->pipes[i]->bytes_written == 0) {
+                ssize_t bytes = tee(ea->out_pipe->read_fd,
+                                    ea->in_pipes->pipes[i]->write_fd,
+                                    4096,
+                                    SPLICE_F_NONBLOCK);
+
+                if (bytes < 0) {
+                    /* TODO Write logic to handle errno... */
+                    got_eof = 0;
+                    if (errno != EAGAIN) {
+                        PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
+                        return;
+                    }
+                }
+                else if (bytes > 0) {
+                    got_eof = 0;
+                    ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
+                    *ea->bytes_spliced[i] += bytes;
+                }
+            }
+            if (ea->in_pipes->pipes[i]->bytes_written < lowest_bytes_written) {
+                lowest_bytes_written = ea->in_pipes->pipes[i]->bytes_written;
+            }
+        }
+        /* tee duplicates input... consume input by splicing to dev null
+         * TODO detect when there is exactly one output pipe and splice directly.
+         * This is likely to be very common, and we can then go without the overhead
+         * of duplicating the data and then discarding the original. */
+        bytes = splice(ea->out_pipe->read_fd,
+                               NULL,
+                               fd_dev_null,
+                               NULL,
+                               lowest_bytes_written,
+                               SPLICE_F_NONBLOCK);
+
+        if (bytes < 0 && errno != EAGAIN) {
+            return;
+        }
     }
     if (got_eof && bytes == 0) {
         PRINT_DEBUG("Edge at EOF... closing pipes for edge %s\n", ea->out_pipe->edge_id);
