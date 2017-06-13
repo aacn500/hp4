@@ -1,4 +1,4 @@
-sources = hp4.c parser.c pipe.c stats.c
+sources = event_handlers.c hp4.c parser.c pipe.c stats.c strutil.c
 defines = -D_GNU_SOURCE
 libs = -levent -ljansson
 warnings = -Wall -Wextra -Wno-unused-parameter

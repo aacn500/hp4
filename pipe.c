@@ -2,7 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "hp4.h"
+#include "debug.h"
 #include "pipe.h"
 
 struct pipe *pipe_new(char *port, char *edge_id) {
