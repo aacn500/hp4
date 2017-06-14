@@ -1,2 +1,16 @@
 bin/
+# files generated when compiling for gdb
 *.c.*
+
+# autotools related files
+**/*.o
+*.in
+aclocal.m4
+autom4te.cache/
+build-aux
+config.h
+config.log
+config.status
+configure
+**/Makefile
+stamp-h1
