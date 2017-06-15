@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,53 +180,106 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
             }
             if (pn->out_pipes->length != 0u) {
                 for (int j = 0; j < (int)pn->out_pipes->length; j++) {
-                    struct event_args *ea = malloc(sizeof(*ea));
-                    if (ea == NULL) {
+                    struct readable_ev_args *rea = malloc(sizeof(*rea));
+                    if (rea == NULL) {
                         return -1;
                     }
-                    ea->out_pipe = pn->out_pipes->pipes[j];
-                    int read_fd = ea->out_pipe->read_fd;
+                    struct pipe *from_pipe = pn->out_pipes->pipes[j];
+                    int read_fd = from_pipe->read_fd;
                     fcntl(read_fd, F_SETFL, fcntl(read_fd, F_GETFL, NULL) & O_NONBLOCK);
-                    ea->in_pipes = pipe_array_new();
-                    if (ea->in_pipes == NULL) {
+                    struct pipe_array *to_pipes = pipe_array_new();
+                    if (to_pipes == NULL) {
                         return -1;
                     }
-                    ea->bytes_spliced = calloc(pn->listening_edges->length,
+                    rea->to_pipes = to_pipes;
+                    ssize_t **bytes_spliced = calloc(pn->listening_edges->length,
                             sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
-                    if (ea->bytes_spliced == NULL) {
+                    if (bytes_spliced == NULL) {
                         return -1;
                     }
 
+                    struct event *readable = event_new(eb, from_pipe->read_fd,
+                                                       EV_READ, readableCb,
+                                                       rea);
+
+                    rea->writable_events = event_array_new();
+                    if (rea->writable_events == NULL) {
+                        return -1;
+                    }
+
+                    int *got_eof = malloc(sizeof(*got_eof));
+                    if (got_eof == NULL) {
+                        return -1;
+                    }
+                    *got_eof = 1;
+                    rea->got_eof = got_eof;
+
+                    size_t *lowest_bytes_written = malloc(sizeof(*lowest_bytes_written));
+                    if (lowest_bytes_written == NULL) {
+                        return -1;
+                    }
+                    *lowest_bytes_written = SIZE_MAX;
+                    rea->lowest_bytes_written = lowest_bytes_written;
+
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
+                        struct writable_ev_args *wea = malloc(sizeof(*wea));
+                        if (wea == NULL) {
+                            return -1;
+                        }
+                        wea->from_pipe = from_pipe;
+                        wea->to_pipes = to_pipes;
+                        wea->bytes_spliced = bytes_spliced;
+                        wea->to_pipe_idx = k;
+                        wea->readable_event = readable;
+                        wea->got_eof = got_eof;
+                        wea->lowest_bytes_written = lowest_bytes_written;
                         struct p4_edge *edge = pn->listening_edges->edges[k];
-                        ea->bytes_spliced[k] = &edge->bytes_spliced;
+                        bytes_spliced[k] = &edge->bytes_spliced;
                         struct p4_node *dest = find_node_by_id(pf, edge->to);
                         if (dest == NULL) {
                             PRINT_DEBUG("No node found with id %s\n", edge->to);
-                            pipe_array_free(ea->in_pipes);
-                            free(ea->bytes_spliced);
-                            free(ea);
+                            event_array_free(rea->writable_events);
+                            free(rea);
+                            pipe_array_free(to_pipes);
+                            event_free(readable);
+                            free(bytes_spliced);
+                            free(wea);
                             return -1;
                         }
-                        struct pipe *in_pipe = find_pipe_by_edge_id(dest->in_pipes, edge->id);
-                        int write_fd = in_pipe->write_fd;
+                        struct pipe *to_pipe = find_pipe_by_edge_id(dest->in_pipes, edge->id);
+                        int write_fd = to_pipe->write_fd;
                         fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, NULL) & O_NONBLOCK);
-                        if (pipe_array_append(ea->in_pipes, in_pipe) < 0) {
-                            pipe_array_free(ea->in_pipes);
-                            free(ea->bytes_spliced);
-                            free(ea);
+                        if (pipe_array_append(wea->to_pipes, to_pipe) < 0) {
+                            event_array_free(rea->writable_events);
+                            free(rea);
+                            pipe_array_free(wea->to_pipes);
+                            event_free(readable);
+                            free(bytes_spliced);
+                            free(wea);
+                            return -1;
+                        }
+                        struct event *writable = event_new(eb, to_pipe->write_fd,
+                                                           EV_WRITE, writableCb,
+                                                           wea);
+                        if (event_array_append(rea->writable_events, writable) < 0) {
+                            event_array_free(rea->writable_events);
+                            free(rea);
+                            pipe_array_free(to_pipes);
+                            event_free(readable);
+                            free(bytes_spliced);
+                            free(wea);
                             return -1;
                         }
                     }
-                    struct event *readable = event_new(eb, ea->out_pipe->read_fd,
-                                                       EV_READ|EV_PERSIST, readableCb,
-                                                       ea);
+
+                    /* TODO create array of writable events, add to `ea`, but DON'T add
+                     * to ready events */
                     if (event_add(readable, NULL) < 0) {
-                        // TODO print something?
+                        event_array_free(rea->writable_events);
+                        free(rea);
+                        pipe_array_free(to_pipes);
+                        free(bytes_spliced);
                         event_free(readable);
-                        pipe_array_free(ea->in_pipes);
-                        free(ea->bytes_spliced);
-                        free(ea);
                         return -1;
                     }
                 }

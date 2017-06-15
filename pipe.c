@@ -23,6 +23,7 @@ struct pipe *pipe_new(char *port, char *edge_id) {
     new_pipe->port = port;
     new_pipe->edge_id = edge_id;
     new_pipe->bytes_written = 0u;
+    new_pipe->visited = 0;
     return new_pipe;
 }
 
