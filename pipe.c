@@ -82,7 +82,7 @@ int pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
 int pipe_array_close(struct pipe_array *pa) {
     int res = 0;
     for (size_t i = 0u; i < pa->length; i++) {
-        res &= close_pipe(pa->pipes[i]);
+        res |= close_pipe(pa->pipes[i]);
     }
     return res;
 }

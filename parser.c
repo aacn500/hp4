@@ -348,6 +348,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_id = json_object_get(node, "id"))) {
         parsed_node->id = malloc((json_string_length(json_id)+1) * sizeof(char));
         if (parsed_node->id == NULL) {
+            json_decref(node);
             return -1;
         }
         strcpy(parsed_node->id, json_string_value(json_id));
@@ -359,6 +360,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
         parsed_node->type = malloc((json_string_length(json_type)+1) * sizeof(char));
         if (parsed_node->type == NULL) {
             free(parsed_node->id);
+            json_decref(node);
             return -1;
         }
         strcpy(parsed_node->type, json_string_value(json_type));
@@ -371,6 +373,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
         if (parsed_node->subtype == NULL) {
             free(parsed_node->type);
             free(parsed_node->id);
+            json_decref(node);
             return -1;
         }
         strcpy(parsed_node->subtype, json_string_value(json_subtype));
@@ -384,6 +387,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
             free(parsed_node->subtype);
             free(parsed_node->type);
             free(parsed_node->id);
+            json_decref(node);
             return -1;
         }
         strcpy(parsed_node->cmd, json_string_value(json_cmd));
@@ -398,6 +402,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
             free(parsed_node->subtype);
             free(parsed_node->type);
             free(parsed_node->id);
+            json_decref(node);
             return -1;
         }
         strcpy(parsed_node->name, json_string_value(json_name));
@@ -408,6 +413,10 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     parsed_node->in_pipes = pipe_array_new();
     parsed_node->out_pipes = pipe_array_new();
+    if (parsed_node->in_pipes == NULL || parsed_node->out_pipes == NULL) {
+        json_decref(node);
+        return -1;
+    }
 
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */

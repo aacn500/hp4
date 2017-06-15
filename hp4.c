@@ -34,10 +34,14 @@ int build_edges(struct p4_file *pf) {
 
         if (strncmp(from->type, "EXEC\0", 5) == 0 && strncmp(to->type, "EXEC\0", 5) == 0) {
             if (pipe_array_has_pipe_with_port(from->out_pipes, pe->from_port) == 0) {
-                pipe_array_append_new(from->out_pipes, pe->from_port, pe->id);
+                if (pipe_array_append_new(from->out_pipes, pe->from_port, pe->id) < 0) {
+                    return -1;
+                }
             }
             if (pipe_array_has_pipe_with_port(to->in_pipes, pe->to_port) == 0) {
-                pipe_array_append_new(to->in_pipes, pe->to_port, pe->id);
+                if (pipe_array_append_new(to->in_pipes, pe->to_port, pe->id) < 0) {
+                    return -1;
+                }
             }
             if (from->listening_edges == NULL) {
                 from->listening_edges = malloc(sizeof(*from->listening_edges));
@@ -183,6 +187,9 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     int read_fd = ea->out_pipe->read_fd;
                     fcntl(read_fd, F_SETFL, fcntl(read_fd, F_GETFL, NULL) & O_NONBLOCK);
                     ea->in_pipes = pipe_array_new();
+                    if (ea->in_pipes == NULL) {
+                        return -1;
+                    }
                     ea->bytes_spliced = calloc(pn->listening_edges->length,
                             sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
                     if (ea->bytes_spliced == NULL) {
@@ -203,7 +210,12 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         struct pipe *in_pipe = find_pipe_by_edge_id(dest->in_pipes, edge->id);
                         int write_fd = in_pipe->write_fd;
                         fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, NULL) & O_NONBLOCK);
-                        pipe_array_append(ea->in_pipes, in_pipe);
+                        if (pipe_array_append(ea->in_pipes, in_pipe) < 0) {
+                            pipe_array_free(ea->in_pipes);
+                            free(ea->bytes_spliced);
+                            free(ea);
+                            return -1;
+                        }
                     }
                     struct event *readable = event_new(eb, ea->out_pipe->read_fd,
                                                        EV_READ|EV_PERSIST, readableCb,
