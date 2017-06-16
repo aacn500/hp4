@@ -7,6 +7,8 @@ struct pipe {
     char *port;
     char *edge_id;
     size_t bytes_written;
+    /* Flag whether writable callback has fired for this pipe */
+    short visited;
 };
 
 struct pipe_array {

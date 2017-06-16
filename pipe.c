@@ -23,6 +23,7 @@ struct pipe *pipe_new(char *port, char *edge_id) {
     new_pipe->port = port;
     new_pipe->edge_id = edge_id;
     new_pipe->bytes_written = 0u;
+    new_pipe->visited = 0;
     return new_pipe;
 }
 
@@ -50,6 +51,9 @@ int pipe_array_append_new(struct pipe_array *pa, char *port, char *edge_id) {
 }
 
 int pipe_array_append(struct pipe_array *pa, struct pipe *pipe) {
+    if (pipe == NULL) {
+        return -1;
+    }
     if (++pa->length == 1u) {
         pa->pipes = malloc(sizeof(*pa->pipes));
         if (pa->pipes == NULL) {
@@ -82,7 +86,7 @@ int pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
 int pipe_array_close(struct pipe_array *pa) {
     int res = 0;
     for (size_t i = 0u; i < pa->length; i++) {
-        res &= close_pipe(pa->pipes[i]);
+        res |= close_pipe(pa->pipes[i]);
     }
     return res;
 }

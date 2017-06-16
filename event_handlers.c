@@ -15,6 +15,10 @@
 #include "pipe.h"
 #include "stats.h"
 
+#ifndef MAX_BYTES_TO_SPLICE
+#define MAX_BYTES_TO_SPLICE 65536
+#endif /* MAX_BYTES_TO_SPLICE */
+
 int fd_dev_null = -1;
 
 int open_dev_null(void) {
@@ -28,6 +32,41 @@ void close_dev_null(void) {
         // to /dev/null are successful
         close(fd_dev_null);
         fd_dev_null = -1;
+    }
+}
+
+struct event_array *event_array_new(void) {
+    struct event_array *ev_arr = malloc(sizeof(*ev_arr));
+    if (ev_arr == NULL) {
+        return NULL;
+    }
+    ev_arr->length = 0u;
+    ev_arr->events = NULL;
+    return ev_arr;
+}
+
+int event_array_append(struct event_array *ev_arr, struct event *ev) {
+    if (++ev_arr->length == 1u) {
+        ev_arr->events = malloc(sizeof(*ev_arr->events));
+        if (ev_arr->events == NULL) {
+            return -1;
+        }
+    }
+    else {
+        struct event **realloced_events = realloc(ev_arr->events,
+                ev_arr->length * sizeof(*ev_arr->events));
+        if (realloced_events == NULL) {
+            return -1;
+        }
+        ev_arr->events = realloced_events;
+    }
+    ev_arr->events[ev_arr->length - 1] = ev;
+    return 0;
+}
+
+void event_array_free(struct event_array *ev_arr) {
+    for (int i = 0; i < (int)ev_arr->length; i++) {
+        event_free(ev_arr->events[i]);
     }
 }
 
@@ -51,10 +90,12 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             if (errno == ECHILD) {
                 PRINT_DEBUG("Waited for a process to terminate, but all "
                             "child processes have already terminated.\n");
-            } else {
+            }
+            else {
                 PRINT_DEBUG("Got an unexpected error while waiting for "
                             "child to terminate: %s\n", strerror(errno));
             }
+
             break;
         }
         else if (p == 0) {
@@ -66,14 +107,17 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             ++sa->n_children_exited;
             PRINT_DEBUG("%dth child process ended\n", sa->n_children_exited);
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
+
             if (pn == NULL) {
                 PRINT_DEBUG("No node found with pid %u\n", p);
                 return;
             }
+
             if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
                 PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
                         pn->id, strerror(errno));
             }
+
             pn->ended = 1;
 
             if (pn->out_pipes) {
@@ -109,92 +153,147 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
     }
 }
 
-void readableCb(evutil_socket_t fd, short what, void *arg) {
-    struct event_args *ea = arg;
-    if ((what & EV_READ) == 0) {
-        return;
+int write_single(struct writable_ev_args *wea) {
+    int got_eof = 0;
+    struct pipe *to_pipe = wea->to_pipes->pipes[0];
+    ssize_t bytes = splice(wea->from_pipe->read_fd,
+                           NULL,
+                           to_pipe->write_fd,
+                           NULL,
+                           MAX_BYTES_TO_SPLICE,
+                           SPLICE_F_NONBLOCK);
+
+    if (bytes < 0) {
+        if (errno != EAGAIN) {
+            PRINT_DEBUG("Failed to splice data: %s\n", strerror(errno));
+            return -1;
+        }
     }
-    size_t lowest_bytes_written = INT_MAX;
-    int got_eof = 1;
-    ssize_t bytes;
-    if (ea->in_pipes->length == 1u) {
-        bytes = splice(ea->out_pipe->read_fd,
-                       NULL,
-                       ea->in_pipes->pipes[0]->write_fd,
-                       NULL,
-                       4096,
-                       SPLICE_F_NONBLOCK);
+    else if (bytes > 0) {
+        **wea->bytes_spliced += bytes;
+        to_pipe->bytes_written = (size_t)bytes;
+    }
+    else {
+        got_eof = 1;
+    }
+
+    return got_eof;
+}
+
+int write_multiple(struct writable_ev_args *wea) {
+    int i = wea->to_pipe_idx;
+    struct pipe *to_pipe = wea->to_pipes->pipes[i];
+
+    if (to_pipe->bytes_written == 0) {
+        ssize_t bytes = tee(wea->from_pipe->read_fd,
+                            to_pipe->write_fd,
+                            MAX_BYTES_TO_SPLICE,
+                            SPLICE_F_NONBLOCK);
+
         if (bytes < 0) {
-            got_eof = 0;
             if (errno != EAGAIN) {
-                PRINT_DEBUG("Failed to splice data: %s\n", strerror(errno));
-                return;
+                PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
+                return -1;
             }
         }
         else if (bytes > 0) {
-            got_eof = 0;
-            **ea->bytes_spliced += bytes;
-            (*ea->in_pipes->pipes)->bytes_written = (size_t)bytes;
+            to_pipe->bytes_written = (size_t)bytes;
+            *wea->bytes_spliced[i] += bytes;
         }
+    }
+
+    if (wea->to_pipes->pipes[i]->bytes_written < *wea->bytes_safely_written) {
+        *wea->bytes_safely_written = wea->to_pipes->pipes[i]->bytes_written;
+    }
+
+    to_pipe->visited = 1;
+    return 0;
+}
+
+void writable_handler(evutil_socket_t fd, short what, void *arg) {
+    struct writable_ev_args *wea = arg;
+    int got_eof;
+    int last_writable_handler = 1;
+
+    if ((what & EV_WRITE) == 0) {
+        return;
+    }
+
+    if (wea->to_pipes->length == 1u) {
+        got_eof = write_single(wea);
     }
     else {
-        for (int i = 0; i < (int)ea->in_pipes->length; i++) {
-            // tee/splice algorithm based on answer in
-            // https://stackoverflow.com/a/14200975
-            // FIXME This will hang if processes do not read at same rate...
-            // both processes will need to be within 4KB! Not good...
-            if (ea->in_pipes->pipes[i]->bytes_written == 0) {
-                ssize_t bytes = tee(ea->out_pipe->read_fd,
-                                    ea->in_pipes->pipes[i]->write_fd,
-                                    4096,
-                                    SPLICE_F_NONBLOCK);
+        // tee/splice algorithm based on answer in
+        // https://stackoverflow.com/a/14200975
+        write_multiple(wea);
 
-                if (bytes < 0) {
-                    /* TODO Write logic to handle errno... */
-                    got_eof = 0;
-                    if (errno != EAGAIN) {
-                        PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
-                        return;
-                    }
-                }
-                else if (bytes > 0) {
-                    got_eof = 0;
-                    ea->in_pipes->pipes[i]->bytes_written = (size_t)bytes;
-                    *ea->bytes_spliced[i] += bytes;
-                }
-            }
-            if (ea->in_pipes->pipes[i]->bytes_written < lowest_bytes_written) {
-                lowest_bytes_written = ea->in_pipes->pipes[i]->bytes_written;
+        for (int i = 0; i < (int)wea->to_pipes->length; i++) {
+            if (wea->to_pipes->pipes[i]->visited == 0) {
+                /* Not all pipes' writable events have fired; do not yet
+                 * splice to /dev/null or add readable event. */
+                last_writable_handler = 0;
+                break;
             }
         }
-        /* tee duplicates input... consume input by splicing to dev null
-         * TODO detect when there is exactly one output pipe and splice directly.
-         * This is likely to be very common, and we can then go without the overhead
-         * of duplicating the data and then discarding the original. */
-        bytes = splice(ea->out_pipe->read_fd,
-                               NULL,
-                               fd_dev_null,
-                               NULL,
-                               lowest_bytes_written,
-                               SPLICE_F_NONBLOCK);
 
-        if (bytes < 0 && errno != EAGAIN) {
-            return;
+        if (last_writable_handler == 1) {
+            /* If all pipes have been visited, then this is the last
+             * writable_handler to fire. bytes_safely_written lists how many
+             * bytes from the input pipe have been safely tee'd to ALL output
+             * pipes, and can therefore safely be discarded to /dev/null. */
+            ssize_t bytes = splice(wea->from_pipe->read_fd,
+                                   NULL,
+                                   fd_dev_null,
+                                   NULL,
+                                   *wea->bytes_safely_written,
+                                   SPLICE_F_NONBLOCK);
+            if (bytes < 0) {
+                got_eof = 0;
+                if (errno != EAGAIN) {
+                    return;
+                }
+            }
+            else if (bytes > 0) {
+                for (int j = 0; j < (int)wea->to_pipes->length; j++) {
+                    wea->to_pipes->pipes[j]->bytes_written -= bytes;
+                }
+                got_eof = 0;
+            }
+            else {
+                got_eof = 1;
+            }
         }
     }
-    if (got_eof && bytes == 0) {
-        PRINT_DEBUG("Edge at EOF... closing pipes for edge %s\n", ea->out_pipe->edge_id);
-        close(ea->out_pipe->read_fd);
-        for (int k = 0; k < (int)ea->in_pipes->length; k++) {
-            close(ea->in_pipes->pipes[k]->write_fd);
+    if (last_writable_handler == 1) {
+        if (got_eof == 1) {
+            PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", wea->from_pipe->edge_id);
+            close(wea->from_pipe->read_fd);
+            for (int k = 0; k < (int)wea->to_pipes->length; k++) {
+                close(wea->to_pipes->pipes[k]->write_fd);
+            }
         }
-    }
-    for (int j = 0; j < (int)ea->in_pipes->length; j++) {
-        ea->in_pipes->pipes[j]->bytes_written -= bytes;
+        else {
+            event_add(wea->readable_event, NULL);
+        }
     }
 }
 
-void statsCb(evutil_socket_t fd, short what, void *arg) {
+void readable_handler(evutil_socket_t fd, short what, void *arg) {
+    struct readable_ev_args *rea = arg;
+    if ((what & EV_READ) == 0) {
+        return;
+    }
+
+    *rea->bytes_safely_written = SIZE_MAX;
+    for (int i = 0; i < (int)rea->to_pipes->length; i++) {
+        rea->to_pipes->pipes[i]->visited = 0;
+    }
+    for (int j = 0; j < (int)rea->writable_events->length; j++) {
+        event_add(rea->writable_events->events[j], NULL);
+    }
+}
+
+void stats_handler(evutil_socket_t fd, short what, void *arg) {
     struct stats_ev_args *sa = arg;
     struct p4_file *pf = sa->pf;
     create_stats_file(pf);
