@@ -90,10 +90,12 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             if (errno == ECHILD) {
                 PRINT_DEBUG("Waited for a process to terminate, but all "
                             "child processes have already terminated.\n");
-            } else {
+            }
+            else {
                 PRINT_DEBUG("Got an unexpected error while waiting for "
                             "child to terminate: %s\n", strerror(errno));
             }
+
             break;
         }
         else if (p == 0) {
@@ -211,6 +213,7 @@ int write_multiple(struct writable_ev_args *wea) {
 void writable_handler(evutil_socket_t fd, short what, void *arg) {
     struct writable_ev_args *wea = arg;
     int got_eof;
+    int last_writable_handler = 1;
 
     if ((what & EV_WRITE) == 0) {
         return;
@@ -228,45 +231,50 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
             if (wea->to_pipes->pipes[i]->visited == 0) {
                 /* Not all pipes' writable events have fired; do not yet
                  * splice to /dev/null or add readable event. */
-                return;
+                last_writable_handler = 0;
+                break;
             }
         }
 
-        /* If all pipes have been visited, then this is the last
-         * writable_handler to fire. bytes_safely_written lists how many
-         * bytes from the input pipe have been safely tee'd to ALL output
-         * pipes, and can therefore safely be discarded to /dev/null. */
-        ssize_t bytes = splice(wea->from_pipe->read_fd,
-                               NULL,
-                               fd_dev_null,
-                               NULL,
-                               *wea->bytes_safely_written,
-                               SPLICE_F_NONBLOCK);
-        if (bytes < 0) {
-            got_eof = 0;
-            if (errno != EAGAIN) {
-                return;
+        if (last_writable_handler == 1) {
+            /* If all pipes have been visited, then this is the last
+             * writable_handler to fire. bytes_safely_written lists how many
+             * bytes from the input pipe have been safely tee'd to ALL output
+             * pipes, and can therefore safely be discarded to /dev/null. */
+            ssize_t bytes = splice(wea->from_pipe->read_fd,
+                                   NULL,
+                                   fd_dev_null,
+                                   NULL,
+                                   *wea->bytes_safely_written,
+                                   SPLICE_F_NONBLOCK);
+            if (bytes < 0) {
+                got_eof = 0;
+                if (errno != EAGAIN) {
+                    return;
+                }
+            }
+            else if (bytes > 0) {
+                for (int j = 0; j < (int)wea->to_pipes->length; j++) {
+                    wea->to_pipes->pipes[j]->bytes_written -= bytes;
+                }
+                got_eof = 0;
+            }
+            else {
+                got_eof = 1;
             }
         }
-        else if (bytes > 0) {
-            for (int j = 0; j < (int)wea->to_pipes->length; j++) {
-                wea->to_pipes->pipes[j]->bytes_written -= bytes;
+    }
+    if (last_writable_handler == 1) {
+        if (got_eof == 1) {
+            PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", wea->from_pipe->edge_id);
+            close(wea->from_pipe->read_fd);
+            for (int k = 0; k < (int)wea->to_pipes->length; k++) {
+                close(wea->to_pipes->pipes[k]->write_fd);
             }
-            got_eof = 0;
         }
         else {
-            got_eof = 1;
+            event_add(wea->readable_event, NULL);
         }
-    }
-    if (got_eof == 1) {
-        PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", wea->from_pipe->edge_id);
-        close(wea->from_pipe->read_fd);
-        for (int k = 0; k < (int)wea->to_pipes->length; k++) {
-            close(wea->to_pipes->pipes[k]->write_fd);
-        }
-    }
-    else {
-        event_add(wea->readable_event, NULL);
     }
 }
 
