@@ -207,13 +207,6 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         return -1;
                     }
 
-                    int *got_eof = malloc(sizeof(*got_eof));
-                    if (got_eof == NULL) {
-                        return -1;
-                    }
-                    *got_eof = 1;
-                    rea->got_eof = got_eof;
-
                     size_t *bytes_safely_written = malloc(sizeof(*bytes_safely_written));
                     if (bytes_safely_written == NULL) {
                         return -1;
@@ -232,7 +225,6 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         wea->bytes_spliced = bytes_spliced;
                         wea->to_pipe_idx = k;
                         wea->readable_event = readable;
-                        wea->got_eof = got_eof;
                         wea->bytes_safely_written = bytes_safely_written;
                         struct p4_edge *edge = pn->listening_edges->edges[k];
                         bytes_spliced[k] = &edge->bytes_spliced;

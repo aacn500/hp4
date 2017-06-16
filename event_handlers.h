@@ -16,7 +16,6 @@ struct writable_ev_args {
     ssize_t **bytes_spliced;
 
     size_t *bytes_safely_written;
-    int *got_eof;
 
     int to_pipe_idx;
 
@@ -28,7 +27,6 @@ struct readable_ev_args {
     struct pipe_array *to_pipes;
 
     size_t *bytes_safely_written;
-    int *got_eof;
 };
 
 struct sigchld_args {

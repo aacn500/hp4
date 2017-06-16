@@ -151,7 +151,8 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
     }
 }
 
-void write_single(struct writable_ev_args *wea) {
+int write_single(struct writable_ev_args *wea) {
+    int got_eof = 0;
     struct pipe *to_pipe = wea->to_pipes->pipes[0];
     ssize_t bytes = splice(wea->from_pipe->read_fd,
                            NULL,
@@ -161,21 +162,23 @@ void write_single(struct writable_ev_args *wea) {
                            SPLICE_F_NONBLOCK);
 
     if (bytes < 0) {
-        *wea->got_eof = 0;
         if (errno != EAGAIN) {
             PRINT_DEBUG("Failed to splice data: %s\n", strerror(errno));
-            return;
+            return -1;
         }
     }
     else if (bytes > 0) {
-        *wea->got_eof = 0;
         **wea->bytes_spliced += bytes;
         to_pipe->bytes_written = (size_t)bytes;
     }
+    else {
+        got_eof = 1;
+    }
 
+    return got_eof;
 }
 
-void write_multiple(struct writable_ev_args *wea) {
+int write_multiple(struct writable_ev_args *wea) {
     int i = wea->to_pipe_idx;
     struct pipe *to_pipe = wea->to_pipes->pipes[i];
 
@@ -186,14 +189,12 @@ void write_multiple(struct writable_ev_args *wea) {
                             SPLICE_F_NONBLOCK);
 
         if (bytes < 0) {
-            *wea->got_eof = 0;
             if (errno != EAGAIN) {
                 PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
-                return;
+                return -1;
             }
         }
         else if (bytes > 0) {
-            *wea->got_eof = 0;
             to_pipe->bytes_written = (size_t)bytes;
             *wea->bytes_spliced[i] += bytes;
         }
@@ -204,16 +205,19 @@ void write_multiple(struct writable_ev_args *wea) {
     }
 
     to_pipe->visited = 1;
+    return 0;
 }
 
 void writable_handler(evutil_socket_t fd, short what, void *arg) {
     struct writable_ev_args *wea = arg;
+    int got_eof;
+
     if ((what & EV_WRITE) == 0) {
         return;
     }
 
     if (wea->to_pipes->length == 1u) {
-        write_single(wea);
+        got_eof = write_single(wea);
     }
     else {
         // tee/splice algorithm based on answer in
@@ -239,17 +243,22 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
                                *wea->bytes_safely_written,
                                SPLICE_F_NONBLOCK);
         if (bytes < 0) {
-            *wea->got_eof = 0;
-            return;
+            got_eof = 0;
+            if (errno != EAGAIN) {
+                return;
+            }
         }
-        if (bytes > 0) {
+        else if (bytes > 0) {
             for (int j = 0; j < (int)wea->to_pipes->length; j++) {
                 wea->to_pipes->pipes[j]->bytes_written -= bytes;
             }
-            *wea->got_eof = 0;
+            got_eof = 0;
+        }
+        else {
+            got_eof = 1;
         }
     }
-    if (*wea->got_eof == 1) {
+    if (got_eof == 1) {
         PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", wea->from_pipe->edge_id);
         close(wea->from_pipe->read_fd);
         for (int k = 0; k < (int)wea->to_pipes->length; k++) {
@@ -268,7 +277,6 @@ void readable_handler(evutil_socket_t fd, short what, void *arg) {
     }
 
     *rea->bytes_safely_written = SIZE_MAX;
-    *rea->got_eof = 1;
     for (int i = 0; i < (int)rea->to_pipes->length; i++) {
         rea->to_pipes->pipes[i]->visited = 0;
     }
