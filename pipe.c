@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -8,11 +9,13 @@
 struct pipe *pipe_new(char *port, char *edge_id) {
     struct pipe *new_pipe = malloc(sizeof(*new_pipe));
     if (new_pipe == NULL) {
+        REPORT_ERROR(strerror(errno));
         return NULL;
     }
 
     int fds[2] = {0, 0};
     if (pipe(fds) < 0) {
+        REPORT_ERROR(strerror(errno));
         free(new_pipe);
         return NULL;
     }
@@ -39,6 +42,7 @@ struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
 struct pipe_array *pipe_array_new(void) {
     struct pipe_array *pa = malloc(sizeof(*pa));
     if (pa == NULL) {
+        REPORT_ERROR(strerror(errno));
         return NULL;
     }
     pa->length = 0u;
@@ -52,17 +56,20 @@ int pipe_array_append_new(struct pipe_array *pa, char *port, char *edge_id) {
 
 int pipe_array_append(struct pipe_array *pa, struct pipe *pipe) {
     if (pipe == NULL) {
+        REPORT_ERROR("Cannot append NULL pipe");
         return -1;
     }
     if (++pa->length == 1u) {
         pa->pipes = malloc(sizeof(*pa->pipes));
         if (pa->pipes == NULL) {
+            REPORT_ERROR(strerror(errno));
             return -1;
         }
     }
     else {
         struct pipe **realloced_pipes = realloc(pa->pipes, pa->length * sizeof(*pa->pipes));
         if (realloced_pipes == NULL) {
+            REPORT_ERROR(strerror(errno));
             return -1;
         }
         pa->pipes = realloced_pipes;

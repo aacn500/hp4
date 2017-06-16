@@ -10,4 +10,11 @@
 #endif /* HP4_DEBUG */
 #endif /* PRINT_DEBUG */
 
+#ifndef REPORT_ERROR
+#include <stdio.h>
+#define REPORT_ERROR(what) fprintf(stderr, " ERROR: %s:%s:%d\n   %s\n", \
+                                   __FILE__, __func__, __LINE__,        \
+                                   what);
+#endif /* REPORT_ERROR */
+
 #endif /* HP4_DEBUG_H */

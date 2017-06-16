@@ -9,8 +9,8 @@
 
 #include <event2/event.h>
 
-#include "event_handlers.h"
 #include "debug.h"
+#include "event_handlers.h"
 #include "parser.h"
 #include "pipe.h"
 #include "stats.h"
@@ -23,13 +23,15 @@ int fd_dev_null = -1;
 
 int open_dev_null(void) {
     fd_dev_null = open("/dev/null", O_WRONLY|O_NONBLOCK);
+    if (fd_dev_null < 0)
+        REPORT_ERROR(strerror(errno));
     return fd_dev_null;
 }
 
 void close_dev_null(void) {
     if (fd_dev_null >= 0) {
-        // ignore return value as we do not need to ensure writes
-        // to /dev/null are successful
+        /* ignore return value as we do not need to ensure writes
+         * to /dev/null are successful */
         close(fd_dev_null);
         fd_dev_null = -1;
     }
@@ -38,6 +40,7 @@ void close_dev_null(void) {
 struct event_array *event_array_new(void) {
     struct event_array *ev_arr = malloc(sizeof(*ev_arr));
     if (ev_arr == NULL) {
+        REPORT_ERROR(strerror(errno));
         return NULL;
     }
     ev_arr->length = 0u;
@@ -49,6 +52,7 @@ int event_array_append(struct event_array *ev_arr, struct event *ev) {
     if (++ev_arr->length == 1u) {
         ev_arr->events = malloc(sizeof(*ev_arr->events));
         if (ev_arr->events == NULL) {
+            REPORT_ERROR(strerror(errno));
             return -1;
         }
     }
@@ -56,6 +60,7 @@ int event_array_append(struct event_array *ev_arr, struct event *ev) {
         struct event **realloced_events = realloc(ev_arr->events,
                 ev_arr->length * sizeof(*ev_arr->events));
         if (realloced_events == NULL) {
+            REPORT_ERROR(strerror(errno));
             return -1;
         }
         ev_arr->events = realloced_events;
@@ -73,7 +78,10 @@ void event_array_free(struct event_array *ev_arr) {
 void sigint_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("\b\bHandling sigint...\n");
     struct event_base *eb = arg;
-    event_base_loopbreak(eb);
+    if (event_base_loopbreak(eb) < 0) {
+        REPORT_ERROR("Failed to break out of the event loop. Invoking nuclear option...");
+        abort();
+    }
 }
 
 void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
@@ -90,9 +98,10 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             if (errno == ECHILD) {
                 PRINT_DEBUG("Waited for a process to terminate, but all "
                             "child processes have already terminated.\n");
+                return;
             }
             else {
-                PRINT_DEBUG("Got an unexpected error while waiting for "
+                fprintf(stderr, "Got an unexpected error while waiting for "
                             "child to terminate: %s\n", strerror(errno));
             }
 
@@ -109,7 +118,8 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
 
             if (pn == NULL) {
-                PRINT_DEBUG("No node found with pid %u\n", p);
+                REPORT_ERROR("Failed to find a node which matching pid of "
+                             "recently-closed child process");
                 return;
             }
 
@@ -146,8 +156,7 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             break;
         }
         else {
-            PRINT_DEBUG("process did not exit normally and was not terminated "
-                        "by a signal.\n");
+            REPORT_ERROR("A child process did not exited with an error.\n");
             break;
         }
     }
@@ -165,7 +174,7 @@ int write_single(struct writable_ev_args *wea) {
 
     if (bytes < 0) {
         if (errno != EAGAIN) {
-            PRINT_DEBUG("Failed to splice data: %s\n", strerror(errno));
+            REPORT_ERROR(strerror(errno));
             return -1;
         }
     }
@@ -192,7 +201,7 @@ int write_multiple(struct writable_ev_args *wea) {
 
         if (bytes < 0) {
             if (errno != EAGAIN) {
-                PRINT_DEBUG("Failed to tee data: %s\n", strerror(errno));
+                REPORT_ERROR(strerror(errno));
                 return -1;
             }
         }
@@ -250,6 +259,7 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
             if (bytes < 0) {
                 got_eof = 0;
                 if (errno != EAGAIN) {
+                    REPORT_ERROR(strerror(errno));
                     return;
                 }
             }

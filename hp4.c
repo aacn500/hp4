@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -24,30 +25,33 @@ int build_edges(struct p4_file *pf) {
         struct p4_edge *pe = pf->edges->edges[i];
         struct p4_node *from = find_node_by_id(pf, pe->from);
         if (from == NULL) {
-            PRINT_DEBUG("No node found with id %s\n", pe->from);
+            fprintf(stderr, " ERROR: No node found with id %s\n", pe->from);
             return -1;
         }
         struct p4_node *to = find_node_by_id(pf, pe->to);
         if (to == NULL) {
-            PRINT_DEBUG("No node found with id %s\n", pe->to);
+            fprintf(stderr, " ERROR: No node found with id %s\n", pe->to);
             return -1;
         }
 
         if (strncmp(from->type, "EXEC\0", 5) == 0 && strncmp(to->type, "EXEC\0", 5) == 0) {
+            /* if from->out_pipes does NOT have a port named pe->from_port */
             if (pipe_array_has_pipe_with_port(from->out_pipes, pe->from_port) == 0) {
                 if (pipe_array_append_new(from->out_pipes, pe->from_port, pe->id) < 0) {
                     return -1;
                 }
             }
+            /* if to->in_pipes does NOT have a port named pe->to_port */
             if (pipe_array_has_pipe_with_port(to->in_pipes, pe->to_port) == 0) {
                 if (pipe_array_append_new(to->in_pipes, pe->to_port, pe->id) < 0) {
                     return -1;
                 }
             }
+
             if (from->listening_edges == NULL) {
                 from->listening_edges = malloc(sizeof(*from->listening_edges));
                 if (from->listening_edges == NULL) {
-                    PRINT_DEBUG("Failed to allocate memory\n");
+                    REPORT_ERROR(strerror(errno));
                     return -1;
                 }
                 from->listening_edges->edges = NULL;
@@ -56,7 +60,7 @@ int build_edges(struct p4_file *pf) {
             if (from->listening_edges->length == 0u) {
                 from->listening_edges->edges = malloc(sizeof(*from->listening_edges->edges));
                 if (from->listening_edges->edges == NULL) {
-                    PRINT_DEBUG("Failed to allocate memory\n");
+                    REPORT_ERROR(strerror(errno));
                     return -1;
                 }
                 from->listening_edges->edges[0] = pe;
@@ -64,12 +68,13 @@ int build_edges(struct p4_file *pf) {
             }
             else {
                 from->listening_edges->length++;
-                from->listening_edges->edges = realloc(from->listening_edges->edges,
+                struct p4_edge **newmem = realloc(from->listening_edges->edges,
                         (from->listening_edges->length) * sizeof(*from->listening_edges->edges));
-                if (from->listening_edges->edges == NULL) {
-                    PRINT_DEBUG("Failed to reallocate memory\n");
+                if (newmem == NULL) {
+                    REPORT_ERROR(strerror(errno));
                     return -1;
                 }
+                from->listening_edges->edges = newmem;
                 from->listening_edges->edges[from->listening_edges->length - 1] = pe;
             }
         }
@@ -77,7 +82,7 @@ int build_edges(struct p4_file *pf) {
             // TODO support non-EXEC nodes maybe.
             // TODO If not a known node type, this is an invalid graph.
             free_p4_file(pf);
-            PRINT_DEBUG("Non-EXEC nodes are not yet supported\n");
+            fprintf(stderr, "Non-EXEC nodes are not yet supported\n");
             return -1;
         }
     }
@@ -86,6 +91,9 @@ int build_edges(struct p4_file *pf) {
 
 int run_node(struct p4_file *pf, struct p4_node *pn) {
     struct p4_args *pa = args_list_new(pn->cmd);
+    if (pa == NULL)
+        return -1;
+
     pid_t ppid = getppid();
     int def_sin = 1;
     int def_sout = 1;
@@ -96,21 +104,30 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
                 // TODO this means that another pipe has already changed this node's
                 // stdout. It should not happen; two edges which read stdout from
                 // same node should share an out_pipe.
+                REPORT_ERROR("Tried to change a node's stdout a second time");
+                return -1;
             }
             else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
-                perror("dup2 failed");
-                return 1;
+                REPORT_ERROR(strerror(errno));
+                return -1;
             }
             def_sout = 0;
         }
         else {
+            /* TODO can required string length be calculated? 50 *should* be enough */
             char *out_port_fs = calloc(50u, sizeof(*out_port_fs));
             if (out_port_fs == NULL) {
-                return 1;
+                REPORT_ERROR(strerror(errno));
+                return -1;
             }
-            sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd);
+            if (sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd) < 0) {
+                REPORT_ERROR(strerror(errno));
+                return -1;
+            }
             for (int n = 0; n < pa->argc; n++) {
                 char *replaced = strrep(pa->argv[n], out_pipe->port, out_port_fs);
+                if (replaced == NULL)
+                    return -1;
                 pa->argv[n] = replaced;
             }
         }
@@ -123,22 +140,30 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
                 // TODO this means that another pipe has already changed this node's
                 // stdin. This should not happen; two edges which read stdin from the
                 // same node should share in_pipe.
-                return 1;
+                REPORT_ERROR("Tried to change a node's stdin a second time");
+                return -1;
             }
             else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
-                perror("dup2 failed");
-                return 1;
+                REPORT_ERROR(strerror(errno));
+                return -1;
             }
             def_sin = 0;
         }
         else {
-            char *in_port_fs = calloc(20u, sizeof(*in_port_fs));
+            /* TODO can required string length be calculated? 50 *should* be enough */
+            char *in_port_fs = calloc(50u, sizeof(*in_port_fs));
             if (in_port_fs == NULL) {
-                return 1;
+                REPORT_ERROR(strerror(errno));
+                return -1;
             }
-            sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd);
+            if (sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd) < 0) {
+                REPORT_ERROR(strerror(errno));
+                return -1;
+            }
             for (int p = 0; p < pa->argc; p++) {
                 char *replaced = strrep(pa->argv[p], in_pipe->port, in_port_fs);
+                if (replaced == NULL)
+                    return -1;
                 pa->argv[p] = replaced;
             }
         }
@@ -146,20 +171,20 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
     for (int q = 0; q < (int)pf->nodes->length; q++) {
         struct p4_node *po = pf->nodes->nodes[q];
         if (po->in_pipes && pipe_array_close(po->in_pipes) < 0) {
-            perror("close_pipe failed");
-            return 1;
+            return -1;
         }
         if (po->out_pipes && pipe_array_close(po->out_pipes) < 0) {
-            perror("close_pipe failed");
-            return 1;
+            return -1;
         }
     }
+    /* TODO do we care if these closes fail? */
     if (def_sin == 1) {
         close(STDIN_FILENO);
     }
     if (def_sout == 1) {
         close(STDOUT_FILENO);
     }
+    /* TODO should stderr be closed? */
     PRINT_DEBUG("Node %s about to exec\n", pn->id);
     execvp(pa->argv[0], pa->argv);
     return 0;
@@ -182,11 +207,20 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                 for (int j = 0; j < (int)pn->out_pipes->length; j++) {
                     struct readable_ev_args *rea = malloc(sizeof(*rea));
                     if (rea == NULL) {
+                        REPORT_ERROR(strerror(errno));
                         return -1;
                     }
                     struct pipe *from_pipe = pn->out_pipes->pipes[j];
                     int read_fd = from_pipe->read_fd;
-                    fcntl(read_fd, F_SETFL, fcntl(read_fd, F_GETFL, NULL) & O_NONBLOCK);
+                    int current_read_flags = fcntl(read_fd, F_GETFL, NULL);
+                    if (current_read_flags < 0) {
+                        REPORT_ERROR(strerror(errno));
+                        return -1;
+                    }
+                    if (fcntl(read_fd, F_SETFL, current_read_flags & O_NONBLOCK) < 0) {
+                        REPORT_ERROR(strerror(errno));
+                        return -1;
+                    }
                     struct pipe_array *to_pipes = pipe_array_new();
                     if (to_pipes == NULL) {
                         return -1;
@@ -195,12 +229,17 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     ssize_t **bytes_spliced = calloc(pn->listening_edges->length,
                             sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
                     if (bytes_spliced == NULL) {
+                        REPORT_ERROR(strerror(errno));
                         return -1;
                     }
 
                     struct event *readable = event_new(eb, from_pipe->read_fd,
                                                        EV_READ, readable_handler,
                                                        rea);
+                    if (readable == NULL) {
+                        REPORT_ERROR("Failed to create new readable event");
+                        return -1;
+                    }
 
                     rea->writable_events = event_array_new();
                     if (rea->writable_events == NULL) {
@@ -209,6 +248,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
 
                     size_t *bytes_safely_written = malloc(sizeof(*bytes_safely_written));
                     if (bytes_safely_written == NULL) {
+                        REPORT_ERROR(strerror(errno));
                         return -1;
                     }
 
@@ -218,6 +258,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
                         struct writable_ev_args *wea = malloc(sizeof(*wea));
                         if (wea == NULL) {
+                            REPORT_ERROR(strerror(errno));
                             return -1;
                         }
                         wea->from_pipe = from_pipe;
@@ -230,7 +271,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         bytes_spliced[k] = &edge->bytes_spliced;
                         struct p4_node *dest = find_node_by_id(pf, edge->to);
                         if (dest == NULL) {
-                            PRINT_DEBUG("No node found with id %s\n", edge->to);
+                            fprintf(stderr, "No node found with id %s\n", edge->to);
                             event_array_free(rea->writable_events);
                             free(rea);
                             pipe_array_free(to_pipes);
@@ -240,8 +281,21 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                             return -1;
                         }
                         struct pipe *to_pipe = find_pipe_by_edge_id(dest->in_pipes, edge->id);
+                        if (to_pipe == NULL) {
+                            fprintf(stderr, "No edge found with id %s\n", edge->id);
+                            return -1;
+                        }
                         int write_fd = to_pipe->write_fd;
-                        fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, NULL) & O_NONBLOCK);
+                        int current_write_flags = fcntl(write_fd, F_GETFL, NULL);
+                        if (current_write_flags < 0) {
+                            REPORT_ERROR(strerror(errno));
+                            return -1;
+                        }
+
+                        if (fcntl(write_fd, F_SETFL, current_write_flags & O_NONBLOCK) < 0) {
+                            REPORT_ERROR(strerror(errno));
+                            return -1;
+                        }
                         if (pipe_array_append(wea->to_pipes, to_pipe) < 0) {
                             event_array_free(rea->writable_events);
                             free(rea);
@@ -254,6 +308,10 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         struct event *writable = event_new(eb, to_pipe->write_fd,
                                                            EV_WRITE, writable_handler,
                                                            wea);
+                        if (writable == NULL) {
+                            REPORT_ERROR("Failed to create new writable event");
+                            return -1;
+                        }
                         if (event_array_append(rea->writable_events, writable) < 0) {
                             event_array_free(rea->writable_events);
                             free(rea);
@@ -265,9 +323,8 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         }
                     }
 
-                    /* TODO create array of writable events, add to `ea`, but DON'T add
-                     * to ready events */
                     if (event_add(readable, NULL) < 0) {
+                        REPORT_ERROR("Failed to add readable event");
                         event_array_free(rea->writable_events);
                         free(rea);
                         pipe_array_free(to_pipes);
@@ -279,7 +336,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
             }
             pid_t pid = fork();
             if (pid < 0) {
-                perror("forking process failed");
+                REPORT_ERROR(strerror(errno));
             }
             else if (pid == 0) { // child
                 return run_node(pf, pn);
@@ -292,7 +349,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
         else {
             // TODO support *FILE nodes
             free_p4_file(pf);
-            PRINT_DEBUG("Non-EXEC nodes not yet supported\n");
+            fprintf(stderr, "Non-EXEC nodes not yet supported\n");
             return -1;
         }
     }
@@ -354,7 +411,7 @@ int main(int argc, char **argv) {
     }
 
     if (args.graph_file == NULL) {
-        printf("Did not specify a file\n");
+        printf("A file containing a p4 graph MUST be specified\n");
         usage(argv);
         return 1;
     }
@@ -371,19 +428,20 @@ int main(int argc, char **argv) {
 
     struct event_base *eb = event_base_new();
     if (eb == NULL) {
+        REPORT_ERROR("Failed to create a new event_base");
         free_p4_file(pf);
         return 1;
     }
 
     struct event *sigintev = evsignal_new(eb, SIGINT, sigint_handler, eb);
     if (sigintev == NULL) {
-        PRINT_DEBUG("Failed to create sigint event\n");
+        REPORT_ERROR("Failed to create sigint event");
         event_base_free(eb);
         free_p4_file(pf);
         return 1;
     }
     if (event_add(sigintev, NULL) < 0) {
-        PRINT_DEBUG("Failed to add sigint event\n");
+        REPORT_ERROR("Failed to add sigint event");
         event_free(sigintev);
         event_base_free(eb);
         free_p4_file(pf);
@@ -397,22 +455,14 @@ int main(int argc, char **argv) {
 
     struct event *sigchldev = evsignal_new(eb, SIGCHLD, sigchld_handler, &sa);
     if (sigchldev == NULL) {
-        PRINT_DEBUG("Failed to create sigchld event\n");
+        REPORT_ERROR("Failed to create sigchld event");
         event_free(sigintev);
         event_base_free(eb);
         free_p4_file(pf);
         return 1;
     }
     if (event_add(sigchldev, NULL) < 0) {
-        PRINT_DEBUG("Failed to add sigchld event\n");
-        event_free(sigchldev);
-        event_free(sigintev);
-        event_base_free(eb);
-        free_p4_file(pf);
-        return 1;
-    }
-
-    if (pf == NULL) {
+        REPORT_ERROR("Failed to add sigchld event");
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -439,13 +489,16 @@ int main(int argc, char **argv) {
     struct stats_ev_args sea;
     sea.pf = pf;
 
-    long interval_secs, interval_ms, interval_us;
+    unsigned long interval_secs, interval_ms, interval_us;
     if (args.stats_interval) {
-        interval_ms = strtol(args.stats_interval, NULL, 10);
+        interval_ms = strtoul(args.stats_interval, NULL, 10);
+        if (interval_ms == 0)
+            interval_ms = DEFAULT_INTERVAL;
     }
     else {
         interval_ms = DEFAULT_INTERVAL;
     }
+
 
     interval_secs = interval_ms / 1000;
     interval_us = (interval_ms % 1000) * 1000;
