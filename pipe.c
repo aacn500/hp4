@@ -51,6 +51,9 @@ int pipe_array_append_new(struct pipe_array *pa, char *port, char *edge_id) {
 }
 
 int pipe_array_append(struct pipe_array *pa, struct pipe *pipe) {
+    if (pipe == NULL) {
+        return -1;
+    }
     if (++pa->length == 1u) {
         pa->pipes = malloc(sizeof(*pa->pipes));
         if (pa->pipes == NULL) {

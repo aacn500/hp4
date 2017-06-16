@@ -105,14 +105,17 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             ++sa->n_children_exited;
             PRINT_DEBUG("%dth child process ended\n", sa->n_children_exited);
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
+
             if (pn == NULL) {
                 PRINT_DEBUG("No node found with pid %u\n", p);
                 return;
             }
+
             if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
                 PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
                         pn->id, strerror(errno));
             }
+
             pn->ended = 1;
 
             if (pn->out_pipes) {
@@ -156,6 +159,7 @@ void write_single(struct writable_ev_args *wea) {
                            NULL,
                            MAX_BYTES_TO_SPLICE,
                            SPLICE_F_NONBLOCK);
+
     if (bytes < 0) {
         *wea->got_eof = 0;
         if (errno != EAGAIN) {
@@ -174,11 +178,13 @@ void write_single(struct writable_ev_args *wea) {
 void write_multiple(struct writable_ev_args *wea) {
     int i = wea->to_pipe_idx;
     struct pipe *to_pipe = wea->to_pipes->pipes[i];
+
     if (to_pipe->bytes_written == 0) {
         ssize_t bytes = tee(wea->from_pipe->read_fd,
                             to_pipe->write_fd,
                             MAX_BYTES_TO_SPLICE,
                             SPLICE_F_NONBLOCK);
+
         if (bytes < 0) {
             *wea->got_eof = 0;
             if (errno != EAGAIN) {
@@ -192,17 +198,20 @@ void write_multiple(struct writable_ev_args *wea) {
             *wea->bytes_spliced[i] += bytes;
         }
     }
-    if (wea->to_pipes->pipes[i]->bytes_written < *wea->lowest_bytes_written) {
-        *wea->lowest_bytes_written = wea->to_pipes->pipes[i]->bytes_written;
+
+    if (wea->to_pipes->pipes[i]->bytes_written < *wea->bytes_safely_written) {
+        *wea->bytes_safely_written = wea->to_pipes->pipes[i]->bytes_written;
     }
+
     to_pipe->visited = 1;
 }
 
-void writableCb(evutil_socket_t fd, short what, void *arg) {
+void writable_handler(evutil_socket_t fd, short what, void *arg) {
     struct writable_ev_args *wea = arg;
     if ((what & EV_WRITE) == 0) {
         return;
     }
+
     if (wea->to_pipes->length == 1u) {
         write_single(wea);
     }
@@ -218,13 +227,16 @@ void writableCb(evutil_socket_t fd, short what, void *arg) {
                 return;
             }
         }
-        /* All pipes' writable events have fired; splice to /dev/null all data
-         * which has been read to every pipe. */
+
+        /* If all pipes have been visited, then this is the last
+         * writable_handler to fire. bytes_safely_written lists how many
+         * bytes from the input pipe have been safely tee'd to ALL output
+         * pipes, and can therefore safely be discarded to /dev/null. */
         ssize_t bytes = splice(wea->from_pipe->read_fd,
                                NULL,
                                fd_dev_null,
                                NULL,
-                               *wea->lowest_bytes_written,
+                               *wea->bytes_safely_written,
                                SPLICE_F_NONBLOCK);
         if (bytes < 0) {
             *wea->got_eof = 0;
@@ -249,13 +261,13 @@ void writableCb(evutil_socket_t fd, short what, void *arg) {
     }
 }
 
-void readableCb(evutil_socket_t fd, short what, void *arg) {
+void readable_handler(evutil_socket_t fd, short what, void *arg) {
     struct readable_ev_args *rea = arg;
     if ((what & EV_READ) == 0) {
         return;
     }
 
-    *rea->lowest_bytes_written = SIZE_MAX;
+    *rea->bytes_safely_written = SIZE_MAX;
     *rea->got_eof = 1;
     for (int i = 0; i < (int)rea->to_pipes->length; i++) {
         rea->to_pipes->pipes[i]->visited = 0;
@@ -265,7 +277,7 @@ void readableCb(evutil_socket_t fd, short what, void *arg) {
     }
 }
 
-void statsCb(evutil_socket_t fd, short what, void *arg) {
+void stats_handler(evutil_socket_t fd, short what, void *arg) {
     struct stats_ev_args *sa = arg;
     struct p4_file *pf = sa->pf;
     create_stats_file(pf);

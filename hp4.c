@@ -199,7 +199,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     }
 
                     struct event *readable = event_new(eb, from_pipe->read_fd,
-                                                       EV_READ, readableCb,
+                                                       EV_READ, readable_handler,
                                                        rea);
 
                     rea->writable_events = event_array_new();
@@ -214,12 +214,13 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     *got_eof = 1;
                     rea->got_eof = got_eof;
 
-                    size_t *lowest_bytes_written = malloc(sizeof(*lowest_bytes_written));
-                    if (lowest_bytes_written == NULL) {
+                    size_t *bytes_safely_written = malloc(sizeof(*bytes_safely_written));
+                    if (bytes_safely_written == NULL) {
                         return -1;
                     }
-                    *lowest_bytes_written = SIZE_MAX;
-                    rea->lowest_bytes_written = lowest_bytes_written;
+
+                    *bytes_safely_written = SIZE_MAX;
+                    rea->bytes_safely_written = bytes_safely_written;
 
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
                         struct writable_ev_args *wea = malloc(sizeof(*wea));
@@ -232,7 +233,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         wea->to_pipe_idx = k;
                         wea->readable_event = readable;
                         wea->got_eof = got_eof;
-                        wea->lowest_bytes_written = lowest_bytes_written;
+                        wea->bytes_safely_written = bytes_safely_written;
                         struct p4_edge *edge = pn->listening_edges->edges[k];
                         bytes_spliced[k] = &edge->bytes_spliced;
                         struct p4_node *dest = find_node_by_id(pf, edge->to);
@@ -259,7 +260,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                             return -1;
                         }
                         struct event *writable = event_new(eb, to_pipe->write_fd,
-                                                           EV_WRITE, writableCb,
+                                                           EV_WRITE, writable_handler,
                                                            wea);
                         if (event_array_append(rea->writable_events, writable) < 0) {
                             event_array_free(rea->writable_events);
@@ -457,7 +458,7 @@ int main(int argc, char **argv) {
     interval_secs = interval_ms / 1000;
     interval_us = (interval_ms % 1000) * 1000;
 
-    struct event *dump_stats = event_new(eb, -1, EV_PERSIST, statsCb, &sea);
+    struct event *dump_stats = event_new(eb, -1, EV_PERSIST, stats_handler, &sea);
     if (dump_stats == NULL) {
         PRINT_DEBUG("failed to create stats dump event.\n");
         event_free(sigchldev);
@@ -485,7 +486,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    statsCb(0, 0, &sea);
+    stats_handler(0, 0, &sea);
 
     event_free(dump_stats);
     event_free(sigintev);
