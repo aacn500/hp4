@@ -16,7 +16,7 @@ libhp4_a_SOURCES =       event_handlers.c \
 bin_PROGRAMS = hp4
 
 hp4_LDADD = ../src/libhp4.a
-hp4_CPPFLAGS = -I$(srcdir)/../src
+hp4_CPPFLAGS = -I$(srcdir)
 
 hp4_SOURCES = hp4.h \
               hp4.c
