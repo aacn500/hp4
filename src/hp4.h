@@ -6,6 +6,8 @@ struct hp4_args {
 
     char *graph_file;
 
+    char version;
+
     char help;
 };
 

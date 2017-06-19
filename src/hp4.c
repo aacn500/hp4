@@ -362,6 +362,7 @@ void usage(char **argv) {
     printf("Usage: %s [OPTIONS] file\n", argv[0]);
     printf("\n");
     printf("  -h, --help      display this help and exit\n");
+    printf("  -V, --version   display version string and exit\n");
     printf("  -i, --interval  set time in milliseconds between dumping stats\n");
     printf("                    to stdout; defaults to %d\n", DEFAULT_INTERVAL);
     printf("  -f, --file      file containing json definition of process graph\n");
@@ -373,21 +374,25 @@ int get_args(int argc, char **argv, struct hp4_args *args) {
     {
         {"interval", required_argument, 0, 'i'},
         {"file",     required_argument, 0, 'f'},
+        {"version",  no_argument,       0, 'V'},
         {"help",     no_argument,       0, 'h'},
         {0,          0,                 0,  0 }
     };
     char c;
     int option_index = 0;
-    while ((c = getopt_long(argc, argv, "i:f:h", long_options, &option_index)) >= 0) {
+    while ((c = getopt_long(argc, argv, "i:f:Vh", long_options, &option_index)) >= 0) {
         switch (c) {
+            case 'h':
+                args->help = 1;
+                break;
+            case 'V':
+                args->version = 1;
+                break;
             case 'i':
                 args->stats_interval = optarg;
                 break;
             case 'f':
                 args->graph_file = optarg;
-                break;
-            case 'h':
-                args->help = 1;
                 break;
             default:
                 break;
@@ -401,6 +406,7 @@ int main(int argc, char **argv) {
     args.stats_interval = NULL;
     args.graph_file = NULL;
     args.help = 0;
+    args.version = 0;
 
     if (get_args(argc, argv, &args) < 0) {
         usage(argv);
@@ -409,6 +415,11 @@ int main(int argc, char **argv) {
 
     if (args.help == 1) {
         usage(argv);
+        return 0;
+    }
+
+    if (args.version == 1) {
+        printf("%s\n", PACKAGE_VERSION);
         return 0;
     }
 
