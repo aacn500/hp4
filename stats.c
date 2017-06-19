@@ -31,13 +31,13 @@ int create_stats_file(struct p4_file *pf) {
         }
     }
 
-    if (json_dumpfd(json_byte_counters, STDOUT_FILENO, 0) < 0) {
+    if (json_dumpf(json_byte_counters, stdout, 0) < 0) {
         REPORT_ERROR("Failed to dump json object to stdout");
         json_decref(json_byte_counters);
         return -1;
     }
 
-    if (write(STDOUT_FILENO, "\n", 1) < 0) {
+    if (fputc('\n', stdout) < 0) {
         REPORT_ERROR("Failed to write trailing newline to stdout");
         json_decref(json_byte_counters);
         return -1;

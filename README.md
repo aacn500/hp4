@@ -6,7 +6,10 @@ hp4 requires the following libraries:
  * [libjansson](https://github.com/akheron/jansson)
  * [libevent](http://libevent.org)
 
-Developed using libjansson 2.10, libevent 2.0.21.
+Confirmed compatible with libjansson 2.7, libevent 2.0.21.
+These versions are available in xenial(ubuntu 16.04)'s apt repository
+
+ `# apt-get install libevent-dev libjansson-dev`
 
 ## Description
 
@@ -48,4 +51,4 @@ See the below example.
 ## TODO
 
  * If data is being tee'd to multiple edges, the destination nodes must currently read at the same speed, otherwise the faster will be blocked by the slower.
- * Need to output stats about data flow at regular intervals.
+ * DONE ~~Need to output stats about data flow at regular intervals.~~
