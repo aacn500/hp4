@@ -38,6 +38,7 @@ char *strrep(const char *original, const char *replace, const char *with) {
         newmem = realloc(result, result_len);
         if (newmem == NULL) {
             REPORT_ERROR(strerror(errno));
+            free(result);
             return NULL;
         }
         result = newmem;
@@ -50,6 +51,7 @@ char *strrep(const char *original, const char *replace, const char *with) {
     newmem = realloc(result, result_len);
     if (newmem == NULL) {
         REPORT_ERROR(strerror(errno));
+        free(result);
         return NULL;
     }
     result = newmem;

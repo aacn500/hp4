@@ -1,8 +1,12 @@
-TESTS = check_strutil
+AM_CFLAGS = -Wall -Werror -Wextra -pedantic
 
-check_PROGRAMS = check_strutil
+TESTS = check_runner
 
-check_strutil_SOURCES = check_strutil.c $(top_builddir)/src/strutil.h
-check_strutil_CFLAGS = @CHECK_CFLAGS@
-check_strutil_LDADD = $(top_builddir)/src/libhp4.a @CHECK_LIBS@
-check_strutil_LDFLAGS = -pthread
+noinst_PROGRAMS = check_runner
+
+check_runner_SOURCES = check_main.c \
+					   check_strutil.c $(top_builddir)/src/strutil.h \
+					   check_parser.c  $(top_builddir)/src/parser.h
+check_runner_CFLAGS = @CHECK_CFLAGS@ $(AM_CFLAGS)
+check_runner_LDADD = $(top_builddir)/src/libhp4.a @CHECK_LIBS@
+check_runner_LDFLAGS = -pthread

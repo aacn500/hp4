@@ -20,3 +20,7 @@ install:
 
 script:
   - make check
+
+after_failure:
+  # view test log
+  - cat test/test-suite.log

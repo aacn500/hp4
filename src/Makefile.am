@@ -1,3 +1,5 @@
+AM_CFLAGS = -Wall -Werror -Wextra -pedantic -Wno-unused-parameter
+
 noinst_LIBRARIES = libhp4.a
 libhp4_includedir = $(includedir)/hp4
 libhp4_include_HEADERS = debug.h \

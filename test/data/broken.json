@@ -1,0 +1,9 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat"
+        }
+    ],
+

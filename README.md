@@ -18,6 +18,9 @@ These versions are available in xenial(ubuntu 16.04)'s apt repository
 
 ## Installation
 
+To install on a fresh precise image:
+ `# apt-get install git autoconf automake libtool make`
+
 ```bash
 autoreconf -fi
 ./configure
