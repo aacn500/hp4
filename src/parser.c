@@ -112,15 +112,22 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(from_parsed);
         }
         else {
-            // TODO error when parsing the edge; found multiple ports
-            REPORT_ERROR("Failed to parse `from` field in edge. Multiple ports?");
+            REPORT_ERROR("");
+            fprintf(stderr, "Failed to parse `from` field in edge %s. Multiple ports?",
+                    parsed_edge->id);
             parsed_edge->from = NULL;
             parsed_edge->from_port = NULL;
+            json_decref(edge);
+            return -1;
         }
     }
     else {
+        REPORT_ERROR("");
+        fprintf(stderr, "Edge %s has no `from` node", parsed_edge->id);
         parsed_edge->from = NULL;
         parsed_edge->from_port = NULL;
+        json_decref(edge);
+        return -1;
     }
     if ((json_to = json_object_get(edge, "to"))) {
         const char *to_ro = json_string_value(json_to);
@@ -131,35 +138,46 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(to_parsed);
         }
         else {
-            // TODO error when parsing the edge; found multiple ports
-            REPORT_ERROR("Failed to parse `to` field in edge. Multiple ports?");
+            REPORT_ERROR("");
+            fprintf(stderr, "Failed to parse `to` field in edge %s. Multiple ports?",
+                    parsed_edge->id);
             parsed_edge->to = NULL;
             parsed_edge->to_port = NULL;
+            json_decref(edge);
+            return -1;
         }
     }
     else {
+        REPORT_ERROR("");
+        fprintf(stderr, "Edge %s has no `to` node", parsed_edge->id);
         parsed_edge->to = NULL;
         parsed_edge->to_port = NULL;
+        json_decref(edge);
+        return -1;
     }
     json_decref(edge);
     return 0;
 }
 
 void free_p4_edge(struct p4_edge *pe) {
-    free(pe->id);
-    free(pe->from);
-    free(pe->from_port);
-    free(pe->to);
-    free(pe->to_port);
-    free(pe);
+    if (pe != NULL) {
+        free(pe->id);
+        free(pe->from);
+        free(pe->from_port);
+        free(pe->to);
+        free(pe->to_port);
+        free(pe);
+    }
 }
 
 void free_p4_edge_array(struct p4_edge_array *edges) {
-    for (size_t i = 0u; i < edges->length; i++) {
-        free_p4_edge(edges->edges[i]);
+    if (edges != NULL) {
+        for (size_t i = 0u; i < edges->length; i++) {
+            free_p4_edge(edges->edges[i]);
+        }
+        free(edges->edges);
+        free(edges);
     }
-    free(edges->edges);
-    free(edges);
 }
 
 struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
@@ -208,27 +226,31 @@ struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
 }
 
 void free_p4_node(struct p4_node *pn) {
-    free(pn->id);
-    free(pn->type);
-    free(pn->subtype);
-    free(pn->cmd);
-    free(pn->name);
+    if (pn != NULL) {
+        free(pn->id);
+        free(pn->type);
+        free(pn->subtype);
+        free(pn->cmd);
+        free(pn->name);
 
-    pipe_array_free(pn->in_pipes);
-    pipe_array_free(pn->out_pipes);
+        pipe_array_free(pn->in_pipes);
+        pipe_array_free(pn->out_pipes);
 
-    if (pn->listening_edges != NULL)
-        free(pn->listening_edges->edges);
-    free(pn->listening_edges);
-    free(pn);
+        if (pn->listening_edges != NULL)
+            free(pn->listening_edges->edges);
+        free(pn->listening_edges);
+        free(pn);
+    }
 }
 
 void free_p4_node_array(struct p4_node_array *nodes) {
-    for (size_t i = 0u; i < nodes->length; i++) {
-        free_p4_node(nodes->nodes[i]);
+    if (nodes != NULL) {
+        for (size_t i = 0u; i < nodes->length; i++) {
+            free_p4_node(nodes->nodes[i]);
+        }
+        free(nodes->nodes);
+        free(nodes);
     }
-    free(nodes->nodes);
-    free(nodes);
 }
 
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
@@ -449,6 +471,9 @@ struct p4_file *p4_file_new(const char *filename) {
         return NULL;
     }
 
+    pf->nodes = NULL;
+    pf->edges = NULL;
+
     pf->edges = p4_edge_array_new(edges, json_array_size(edges));
     if (pf->edges == NULL) {
         free_p4_file(pf);
@@ -488,7 +513,9 @@ int validate_p4_file(struct p4_file *pf) {
 }
 
 void free_p4_file(struct p4_file *pf) {
-    free_p4_node_array(pf->nodes);
-    free_p4_edge_array(pf->edges);
-    free(pf);
+    if (pf != NULL) {
+        free_p4_node_array(pf->nodes);
+        free_p4_edge_array(pf->edges);
+        free(pf);
+    }
 }

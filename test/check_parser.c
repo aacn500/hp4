@@ -22,6 +22,15 @@ START_TEST(fail_parse_broken_json) {
 
     pf = p4_file_new("data/no_edges.json");
     ck_assert(pf == NULL);
+
+    pf = p4_file_new("data/multiple_ports.json");
+    ck_assert(pf == NULL);
+
+    pf = p4_file_new("data/edge_no_from.json");
+    ck_assert(pf == NULL);
+
+    pf = p4_file_new("data/edge_no_to.json");
+    ck_assert(pf == NULL);
 }
 END_TEST
 
