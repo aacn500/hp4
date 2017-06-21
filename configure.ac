@@ -27,6 +27,8 @@ AC_CHECK_LIB([event], [event_base_new], [],
 AC_CHECK_LIB([jansson], [json_string_length], [],
              AC_MSG_ERROR([unable to find libjansson >= 2.7]))
 
+AC_DEFINE([PORT_DELIMITER], [':'], [char which signifies start of port name])
+
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile test/Makefile])
 

@@ -92,8 +92,11 @@ int build_edges(struct p4_file *pf) {
 }
 
 int run_node(struct p4_file *pf, struct p4_node *pn) {
-    struct p4_args *pa = args_list_new(pn->cmd);
+    struct argstruct *pa = malloc(sizeof(*pa));
     if (pa == NULL)
+        return -1;
+
+    if (parse_argstring(pa, pn->cmd) < 0)
         return -1;
 
     pid_t ppid = getppid();
