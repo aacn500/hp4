@@ -4,11 +4,6 @@
 
 #include "../src/parser.h"
 
-START_TEST(test_alive) {
-    ck_assert_int_eq(1, 1);
-}
-END_TEST
-
 START_TEST(fail_parse_broken_json) {
     struct p4_file *pf;
     pf = p4_file_new("data/broken.json");
@@ -112,10 +107,6 @@ END_TEST
 
 Suite *parser_suite(void) {
     Suite *s = suite_create("parser");
-
-    TCase *tc_alive = tcase_create("Alive");
-    tcase_add_test(tc_alive, test_alive);
-    suite_add_tcase(s, tc_alive);
 
     TCase *tc_parse = tcase_create("parse");
     tcase_add_test(tc_parse, fail_parse_broken_json);

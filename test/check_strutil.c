@@ -4,11 +4,6 @@
 
 #include "../src/strutil.h"
 
-START_TEST(test_alive) {
-    ck_assert_int_eq(1, 1);
-}
-END_TEST
-
 START_TEST(test_strrep) {
     /* Fails when any input is NULL */
     ck_assert(strrep(NULL, NULL, NULL) == NULL);
@@ -96,12 +91,6 @@ END_TEST
 Suite *strutil_suite(void) {
     Suite *s;
     s = suite_create("strutil");
-
-    TCase *tc_alive;
-
-    tc_alive = tcase_create("Alive");
-    tcase_add_test(tc_alive, test_alive);
-    suite_add_tcase(s, tc_alive);
 
     TCase *tc_strrep;
 
