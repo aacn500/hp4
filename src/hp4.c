@@ -222,7 +222,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         REPORT_ERROR(strerror(errno));
                         return -1;
                     }
-                    if (fcntl(read_fd, F_SETFL, current_read_flags & O_NONBLOCK) < 0) {
+                    if (fcntl(read_fd, F_SETFL, current_read_flags | O_NONBLOCK) < 0) {
                         REPORT_ERROR(strerror(errno));
                         return -1;
                     }
@@ -297,7 +297,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                             return -1;
                         }
 
-                        if (fcntl(write_fd, F_SETFL, current_write_flags & O_NONBLOCK) < 0) {
+                        if (fcntl(write_fd, F_SETFL, current_write_flags | O_NONBLOCK) < 0) {
                             REPORT_ERROR(strerror(errno));
                             return -1;
                         }
