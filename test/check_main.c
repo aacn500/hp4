@@ -2,14 +2,19 @@
 
 #include <check.h>
 
+Suite *stats_suite(void);
 Suite *strutil_suite(void);
 Suite *parser_suite(void);
 Suite *pipe_suite(void);
 
 int main(void) {
     int n_failed;
+
+    Suite *s_stats = stats_suite();
+    SRunner *sr = srunner_create(s_stats);
+
     Suite *s_strutil = strutil_suite();
-    SRunner *sr = srunner_create(s_strutil);
+    srunner_add_suite(sr, s_strutil);
 
     Suite *s_parser = parser_suite();
     srunner_add_suite(sr, s_parser);
