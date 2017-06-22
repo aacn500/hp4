@@ -2,14 +2,32 @@
 
 ## Requirements
 
+hp4 makes heavy use of the splice(2) and tee(2) system calls, which are both only available on Linux kernels >= 2.6.17.
+
 hp4 requires the following libraries:
  * [libjansson](https://github.com/akheron/jansson)
  * [libevent](http://libevent.org)
 
-Confirmed compatible with libjansson 2.7, libevent 2.0.21.
+To run tests, it additionally requires
+ * [libcheck](https://github.com/libcheck/check)
+
+Confirmed compatible with libjansson 2.7, libevent 2.0.21 and libcheck 0.10.0.
 These versions are available in xenial(ubuntu 16.04)'s apt repository
 
- `# apt-get install libevent-dev libjansson-dev`
+ `# apt-get install libevent-dev libjansson-dev check`
+
+## Installation
+
+To install on a fresh precise image:
+ `# apt-get install git autoconf automake libtool make`
+
+```bash
+autoreconf -fi
+./configure
+make
+make check
+sudo make install
+```
 
 ## Description
 

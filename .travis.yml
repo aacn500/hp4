@@ -1,0 +1,26 @@
+sudo: required
+
+language: c
+
+compiler: gcc
+
+env:
+  global:
+    - JANSSON_VERSION="2.7"
+    - EVENT_VERSION="2.0.21"
+    - CHECK_VERSION="0.10.0"
+
+before_install:
+  - ./.travis/install.sh
+
+install:
+  - autoreconf -fi
+  - ./configure
+  - make
+
+script:
+  - make check
+
+after_failure:
+  # view test log
+  - cat test/test-suite.log

@@ -1,0 +1,21 @@
+{
+    "nodes": [
+        {
+            "id": "view",
+            "type": "EXEC",
+            "cmd": "samtools view example.bam -O SAM -o _SAM_OUT_ -o _2_OUT"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "save _SAVE_IN_ example.sam"
+        }
+    ],
+    "edges": [
+        {
+            "id": "view-to-save",
+            "from": "view:_SAM_OUT_:_2_OUT",
+            "to": "save:_SAVE_IN_"
+        }
+    ]
+}

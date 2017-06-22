@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -12,107 +14,6 @@
 #include "debug.h"
 #include "parser.h"
 #include "pipe.h"
-
-#define PORT_DELIMITER ':'
-
-/* Split arg string on spaces, except when between openblock,closeblock chars
- * Adapted from https://stackoverflow.com/a/26201820 */
-struct p4_args *args_list_new(const char *input) {
-    if (input == NULL) {
-        return NULL;
-    }
-
-    char *input_cpy = malloc((strlen(input) + 1) * sizeof(*input_cpy));
-    if (input_cpy == NULL) {
-        REPORT_ERROR(strerror(errno));
-        return NULL;
-    }
-    strcpy(input_cpy, input);
-    char *token = input_cpy;
-    char *current = input_cpy;
-    char *block = NULL;
-
-    /* NB. each block-closing character MUST be placed at the same index as
-     *     its matching block-opening character to show the relationship.
-     * NB. nested blocks will not be respected.
-     * Separated openblock + closeblock as they could in future be extended
-     * to allow e.g. parentheses as block characters. */
-    char openblock[] =  "\"'";
-    char closeblock[] = "\"'";
-    const char delimiter = ' ';
-
-    char in_block = 0;
-    int block_idx = -1;
-
-    int argc = 0;
-    char **argv = NULL;
-
-    while (*token != '\0') {
-        if (!in_block && (block_idx >= 0)) {
-            /* TODO this should not happen; test + fail loudly */
-        }
-        else if (in_block && (*token == closeblock[block_idx])) {
-            in_block = 0;
-            block_idx = -1;
-            *token = delimiter;
-            --token;
-        }
-        else if (!in_block && ((block = strchr(openblock, *token)) != NULL)) {
-            in_block = 1;
-            /* get index of character which is opening block */
-            block_idx = block - openblock;
-            /* don't add quote mark to final string */
-            if (current == token)
-                ++current;
-        }
-        else if (!in_block && *token == delimiter) {
-            if (current == token) {
-                /* skip adding empty strings to argv */
-                ++current;
-            }
-            else {
-                *token = '\0';
-                char **nargv = realloc(argv, sizeof(*argv) * ++argc);
-                if (nargv == NULL) {
-                    REPORT_ERROR(strerror(errno));
-                    free(argv);
-                    free(input_cpy);
-                    return NULL;
-                }
-                argv = nargv;
-                argv[argc-1] = current;
-                current = token + 1;
-            }
-        }
-        ++token;
-    }
-    if (in_block) {
-        /* TODO handle exiting from loop with in_block == 1 */
-    }
-    else {
-        char **nargv = realloc(argv, sizeof(*argv) * (++argc + 1));
-        if (nargv == NULL) {
-            REPORT_ERROR(strerror(errno));
-            free(argv);
-            free(input_cpy);
-            return NULL;
-        }
-        argv = nargv;
-        argv[argc-1] = current;
-        argv[argc] = NULL;
-    }
-
-    struct p4_args *pa = malloc(sizeof(*pa));
-    if (pa == NULL) {
-        REPORT_ERROR(strerror(errno));
-        free(argv);
-        free(input_cpy);
-        return NULL;
-    }
-    pa->argc = argc;
-    pa->argv = argv;
-    return pa;
-}
 
 char **parse_edge_string(const char *edge_ro) {
     char **edge_strings = malloc(2 * sizeof(*edge_strings));
@@ -211,15 +112,22 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(from_parsed);
         }
         else {
-            // TODO error when parsing the edge; found multiple ports
-            REPORT_ERROR("Failed to parse `from` field in edge. Multiple ports?");
+            REPORT_ERROR("");
+            fprintf(stderr, "Failed to parse `from` field in edge %s. Multiple ports?\n",
+                    parsed_edge->id);
             parsed_edge->from = NULL;
             parsed_edge->from_port = NULL;
+            json_decref(edge);
+            return -1;
         }
     }
     else {
+        REPORT_ERROR("");
+        fprintf(stderr, "Edge %s has no `from` node", parsed_edge->id);
         parsed_edge->from = NULL;
         parsed_edge->from_port = NULL;
+        json_decref(edge);
+        return -1;
     }
     if ((json_to = json_object_get(edge, "to"))) {
         const char *to_ro = json_string_value(json_to);
@@ -230,35 +138,46 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(to_parsed);
         }
         else {
-            // TODO error when parsing the edge; found multiple ports
-            REPORT_ERROR("Failed to parse `to` field in edge. Multiple ports?");
+            REPORT_ERROR("");
+            fprintf(stderr, "Failed to parse `to` field in edge %s. Multiple ports?\n",
+                    parsed_edge->id);
             parsed_edge->to = NULL;
             parsed_edge->to_port = NULL;
+            json_decref(edge);
+            return -1;
         }
     }
     else {
+        REPORT_ERROR("");
+        fprintf(stderr, "Edge %s has no `to` node", parsed_edge->id);
         parsed_edge->to = NULL;
         parsed_edge->to_port = NULL;
+        json_decref(edge);
+        return -1;
     }
     json_decref(edge);
     return 0;
 }
 
 void free_p4_edge(struct p4_edge *pe) {
-    free(pe->id);
-    free(pe->from);
-    free(pe->from_port);
-    free(pe->to);
-    free(pe->to_port);
-    free(pe);
+    if (pe != NULL) {
+        free(pe->id);
+        free(pe->from);
+        free(pe->from_port);
+        free(pe->to);
+        free(pe->to_port);
+        free(pe);
+    }
 }
 
 void free_p4_edge_array(struct p4_edge_array *edges) {
-    for (size_t i = 0u; i < edges->length; i++) {
-        free_p4_edge(edges->edges[i]);
+    if (edges != NULL) {
+        for (size_t i = 0u; i < edges->length; i++) {
+            free_p4_edge(edges->edges[i]);
+        }
+        free(edges->edges);
+        free(edges);
     }
-    free(edges->edges);
-    free(edges);
 }
 
 struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
@@ -307,27 +226,31 @@ struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
 }
 
 void free_p4_node(struct p4_node *pn) {
-    free(pn->id);
-    free(pn->type);
-    free(pn->subtype);
-    free(pn->cmd);
-    free(pn->name);
+    if (pn != NULL) {
+        free(pn->id);
+        free(pn->type);
+        free(pn->subtype);
+        free(pn->cmd);
+        free(pn->name);
 
-    pipe_array_free(pn->in_pipes);
-    pipe_array_free(pn->out_pipes);
+        pipe_array_free(pn->in_pipes);
+        pipe_array_free(pn->out_pipes);
 
-    if (pn->listening_edges != NULL)
-        free(pn->listening_edges->edges);
-    free(pn->listening_edges);
-    free(pn);
+        if (pn->listening_edges != NULL)
+            free(pn->listening_edges->edges);
+        free(pn->listening_edges);
+        free(pn);
+    }
 }
 
 void free_p4_node_array(struct p4_node_array *nodes) {
-    for (size_t i = 0u; i < nodes->length; i++) {
-        free_p4_node(nodes->nodes[i]);
+    if (nodes != NULL) {
+        for (size_t i = 0u; i < nodes->length; i++) {
+            free_p4_node(nodes->nodes[i]);
+        }
+        free(nodes->nodes);
+        free(nodes);
     }
-    free(nodes->nodes);
-    free(nodes);
 }
 
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
@@ -548,6 +471,9 @@ struct p4_file *p4_file_new(const char *filename) {
         return NULL;
     }
 
+    pf->nodes = NULL;
+    pf->edges = NULL;
+
     pf->edges = p4_edge_array_new(edges, json_array_size(edges));
     if (pf->edges == NULL) {
         free_p4_file(pf);
@@ -587,7 +513,9 @@ int validate_p4_file(struct p4_file *pf) {
 }
 
 void free_p4_file(struct p4_file *pf) {
-    free_p4_node_array(pf->nodes);
-    free_p4_edge_array(pf->edges);
-    free(pf);
+    if (pf != NULL) {
+        free_p4_node_array(pf->nodes);
+        free_p4_edge_array(pf->edges);
+        free(pf);
+    }
 }

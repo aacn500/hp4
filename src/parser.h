@@ -49,16 +49,9 @@ struct p4_file {
     struct p4_node_array *nodes;
 };
 
-struct p4_args {
-    int argc;
-    char **argv;
-};
-
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id);
 
 struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid);
-
-struct p4_args *args_list_new(const char *args);
 
 struct p4_file *p4_file_new(const char *filename);
 
