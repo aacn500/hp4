@@ -113,7 +113,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
         else {
             REPORT_ERROR("");
-            fprintf(stderr, "Failed to parse `from` field in edge %s. Multiple ports?",
+            fprintf(stderr, "Failed to parse `from` field in edge %s. Multiple ports?\n",
                     parsed_edge->id);
             parsed_edge->from = NULL;
             parsed_edge->from_port = NULL;
@@ -139,7 +139,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
         else {
             REPORT_ERROR("");
-            fprintf(stderr, "Failed to parse `to` field in edge %s. Multiple ports?",
+            fprintf(stderr, "Failed to parse `to` field in edge %s. Multiple ports?\n",
                     parsed_edge->id);
             parsed_edge->to = NULL;
             parsed_edge->to_port = NULL;
