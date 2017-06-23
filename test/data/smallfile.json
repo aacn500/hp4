@@ -3,7 +3,7 @@
         {
             "id": "cat",
             "type": "EXEC",
-            "cmd": "cat data/largefile.txt"
+            "cmd": "cat data/smallfile.txt"
         },
         {
             "id": "sed",
@@ -13,7 +13,7 @@
         {
             "id": "save",
             "type": "EXEC",
-            "cmd": "bash -c 'cat > data/largefile_A.txt'"
+            "cmd": "bash -c 'cat > data/smallfile_A.txt'"
         }
     ],
     "edges": [
