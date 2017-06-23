@@ -1,0 +1,51 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat data/largefile.txt"
+        },
+        {
+            "id": "seda",
+            "type": "EXEC",
+            "cmd": "bash -c \"sed -e 's/a/A/g'\""
+        },
+        {
+            "id": "sedt",
+            "type": "EXEC",
+            "cmd": "bash -c \"sed -e 's/t/T/g'\""
+        },
+        {
+            "id": "savea",
+            "type": "EXEC",
+            "cmd": "bash -c 'cat > data/split_data_large_A.txt'"
+        },
+        {
+            "id": "savet",
+            "type": "EXEC",
+            "cmd": "bash -c 'cat > data/split_data_large_T.txt'"
+        }
+    ],
+    "edges": [
+        {
+            "id": "cat-to-seda",
+            "from": "cat",
+            "to": "seda"
+        },
+        {
+            "id": "seda-to-savea",
+            "from": "seda",
+            "to": "savea"
+        },
+        {
+            "id": "cat-to-sedt",
+            "from": "cat",
+            "to": "sedt"
+        },
+        {
+            "id": "sedt-to-savet",
+            "from": "sedt",
+            "to": "savet"
+        }
+    ]
+}
