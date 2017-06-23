@@ -9,7 +9,7 @@ compiler: gcc
 env:
   global:
     - JANSSON_VERSION="2.7"
-    - EVENT_VERSION="2.0.21"
+    - EVENT_VERSION="2.0.22"
     - CHECK_VERSION="0.10.0"
 
 before_install:

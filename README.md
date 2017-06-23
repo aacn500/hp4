@@ -12,9 +12,11 @@ To run tests, it additionally requires
  * [libcheck](https://github.com/libcheck/check)
 
 Confirmed compatible with libjansson 2.7, libevent 2.0.21 and libcheck 0.10.0.
-These versions are available in xenial(ubuntu 16.04)'s apt repository
+These versions are available in xenial(ubuntu 16.04)'s apt repository.
 
  `# apt-get install libevent-dev libjansson-dev check`
+
+(libevent 2.0.22 is used in travis to avoid a bug when compiling tests.)
 
 ## Installation
 
