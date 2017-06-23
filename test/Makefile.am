@@ -1,6 +1,6 @@
 AM_CFLAGS = -Wall -Werror -Wextra -pedantic
 
-TESTS = check_runner
+TESTS = check_runner test.py
 
 noinst_PROGRAMS = check_runner
 
@@ -12,3 +12,5 @@ check_runner_SOURCES = check_main.c \
 check_runner_CFLAGS = @CHECK_CFLAGS@ $(AM_CFLAGS)
 check_runner_LDADD = $(top_builddir)/src/libhp4.a @CHECK_LIBS@
 check_runner_LDFLAGS = -pthread
+
+EXTRA_DIST = requirements.txt test.py

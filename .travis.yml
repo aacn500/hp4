@@ -1,5 +1,7 @@
 sudo: required
 
+dist: trusty
+
 language: c
 
 compiler: gcc
@@ -14,6 +16,7 @@ before_install:
   - ./.travis/install.sh
 
 install:
+  - pip3 install -r test/requirements.txt
   - autoreconf -fi
   - ./configure
   - make
