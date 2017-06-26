@@ -42,12 +42,48 @@ START_TEST(test_pipe_array) {
 }
 END_TEST
 
+START_TEST(test_pipe_open_and_close) {
+    int success;
+
+    struct pipe_array *pa = pipe_array_new();
+    ck_assert(pa != NULL);
+
+    success = pipe_array_append_new(pa, "-", "edge");
+    ck_assert_int_eq(success, 0);
+    ck_assert_uint_eq(pa->length, 1u);
+    ck_assert_int_eq(pa->pipes[0]->read_fd_is_open, 1);
+    ck_assert_int_eq(pa->pipes[0]->write_fd_is_open, 1);
+
+    success = close_pipe(pa->pipes[0]);
+    ck_assert_int_eq(success, 0);
+    ck_assert_uint_eq(pa->length, 1u);
+    ck_assert_int_eq(pa->pipes[0]->read_fd_is_open, 0);
+    ck_assert_int_eq(pa->pipes[0]->write_fd_is_open, 0);
+
+    success = pipe_array_append_new(pa, "-2", "edge2");
+    ck_assert_int_eq(success, 0);
+    ck_assert_uint_eq(pa->length, 2u);
+    ck_assert_int_eq(pa->pipes[1]->read_fd_is_open, 1);
+    ck_assert_int_eq(pa->pipes[1]->write_fd_is_open, 1);
+
+    success = pipe_array_close(pa);
+    ck_assert_int_eq(success, 0);
+    ck_assert_uint_eq(pa->length, 2u);
+    ck_assert_int_eq(pa->pipes[1]->read_fd_is_open, 0);
+    ck_assert_int_eq(pa->pipes[1]->write_fd_is_open, 0);
+}
+END_TEST
+
 Suite *pipe_suite(void) {
     Suite *s = suite_create("pipe");
 
     TCase *tc_pipe_array = tcase_create("pipe array");
     tcase_add_test(tc_pipe_array, test_pipe_array);
     suite_add_tcase(s, tc_pipe_array);
+
+    TCase *tc_open_and_close = tcase_create("pipe open and close");
+    tcase_add_test(tc_open_and_close, test_pipe_open_and_close);
+    suite_add_tcase(s, tc_open_and_close);
 
     return s;
 }

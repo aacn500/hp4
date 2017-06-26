@@ -134,9 +134,15 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
 
             if (pn->out_pipes) {
                 for (int i = 0; i < (int)pn->out_pipes->length; i++) {
-                    if (close(pn->out_pipes->pipes[i]->write_fd) < 0) {
-                        PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
-                                pn->id, pn->out_pipes->pipes[i]->edge_id, strerror(errno));
+                    struct pipe *out_pipe = pn->out_pipes->pipes[i];
+                    if (out_pipe->write_fd_is_open == 1) {
+                        int close_successful = close(out_pipe->write_fd);
+                        if (close_successful < 0) {
+                            PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
+                                    pn->id, out_pipe->edge_id, strerror(errno));
+                        }
+                        else if (close_successful == 0)
+                            out_pipe->write_fd_is_open = 0;
                     }
                 }
             }
@@ -278,10 +284,14 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
     }
     if (last_writable_handler == 1) {
         if (got_eof == 1) {
-            PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", wea->from_pipe->edge_id);
-            close(wea->from_pipe->read_fd);
+            struct pipe *from_pipe = wea->from_pipe;
+            PRINT_DEBUG("Edge %s at EOF; closing pipes...\n", from_pipe->edge_id);
+            if (from_pipe->read_fd_is_open == 1 && close(from_pipe->read_fd) == 0)
+                from_pipe->read_fd_is_open = 0;
             for (int k = 0; k < (int)wea->to_pipes->length; k++) {
-                close(wea->to_pipes->pipes[k]->write_fd);
+                struct pipe *to_pipe = wea->to_pipes->pipes[k];
+                if (to_pipe->write_fd_is_open == 1 && close(to_pipe->write_fd) == 0)
+                    to_pipe->write_fd_is_open = 0;
             }
         }
         else {

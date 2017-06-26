@@ -3,7 +3,9 @@
 
 struct pipe {
     int read_fd;
+    char read_fd_is_open;
     int write_fd;
+    char write_fd_is_open;
     char *port;
     char *edge_id;
     size_t bytes_written;

@@ -24,7 +24,9 @@ struct pipe *pipe_new(char *port, char *edge_id) {
 
     PRINT_DEBUG("pipe_new {%d %d}\n", fds[0], fds[1]);
     new_pipe->read_fd = fds[0];
+    new_pipe->read_fd_is_open = 1;
     new_pipe->write_fd = fds[1];
+    new_pipe->write_fd_is_open = 1;
     new_pipe->port = port;
     new_pipe->edge_id = edge_id;
     new_pipe->bytes_written = 0u;
@@ -112,7 +114,27 @@ int pipe_array_free(struct pipe_array *pa) {
 }
 
 int close_pipe(struct pipe *pipe_to_close) {
-    PRINT_DEBUG("close_pipe {%d %d}\n", pipe_to_close->read_fd, pipe_to_close->write_fd);
-    return close(pipe_to_close->read_fd) | close(pipe_to_close->write_fd);
-}
+    PRINT_DEBUG("close_pipe {%d %d}\n", pipe_to_close->read_fd,
+                                        pipe_to_close->write_fd);
+    int result = 0;
+    if (pipe_to_close->read_fd_is_open == 1) {
+        int close_read = close(pipe_to_close->read_fd);
+        if (close_read == 0)
+            pipe_to_close->read_fd_is_open = 0;
+        else if (close_read < 0)
+            PRINT_DEBUG("Closing pipe read_fd failed: %s\n",
+                          strerror(errno));
+        result |= close_read;
+    }
+    if (pipe_to_close->write_fd_is_open == 1) {
+        int close_write = close(pipe_to_close->write_fd);
+        if (close_write == 0)
+            pipe_to_close->write_fd_is_open = 0;
+        else if (close_write < 0)
+            PRINT_DEBUG("Closing pipe write_fd failed: %s\n",
+                          strerror(errno));
+        result |= close_write;
+    }
 
+    return result;
+}

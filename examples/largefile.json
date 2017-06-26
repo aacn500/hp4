@@ -3,7 +3,7 @@
         {
             "id": "cat",
             "type": "EXEC",
-            "cmd": "cat data/largefile"
+            "cmd": "cat examples/largefile"
         },
         {
             "id": "sed",
