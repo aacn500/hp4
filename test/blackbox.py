@@ -72,9 +72,36 @@ def test_split_data_large():
             # All 't's have been capitalised to 'T'.
             assert "Lorem ipsum dolor siT ameT, consecTeTur voluTpaT." in line
 
+    # cleanup
     os.remove(script_dir + "/data/split_data_large_A.txt")
     os.remove(script_dir + "/data/split_data_large_T.txt")
 
+
+def test_join_with_ports():
+    child = pexpect.spawn(script_dir + "/../src/hp4 -f " +
+                          script_dir + "/data/join_with_ports.json")
+
+    out = []
+    for line in child:
+        out.append(json.loads(line.decode()))
+
+    assert out[-1]["cat-to-sed"] == 50
+    assert out[-1]["sed-to-diff"] == 50
+    assert out[-1]["cat-to-diff"] == 50
+    assert out[-1]["diff-to-save"] == 112
+
+    expected = [
+            "1c1",
+            "< Lorem ipsum dolor sit amet, consectetur volutpat.",
+            "---",
+            "> Lorem ipsum dolor sit Amet, consectetur volutpAt."
+    ]
+    with open(script_dir + "/data/diff_output.txt", 'r') as f:
+        for line_idx in range(len(expected)):
+            line = f.readline()
+            assert line.startswith(expected[line_idx])
+
+    os.remove(script_dir + "/data/diff_output.txt")
 
 if __name__ == "__main__":
     file_gen.generate_largefile(script_dir + "/data/")

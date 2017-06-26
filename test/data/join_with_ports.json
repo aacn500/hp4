@@ -1,0 +1,46 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat data/smallfile.txt"
+        },
+        {
+            "id": "sed",
+            "type": "EXEC",
+            "cmd": "bash -c \"sed -e 's/a/A/g'\""
+        },
+        {
+            "id": "diff",
+            "type": "EXEC",
+            "cmd": "diff INPUT_UNMOD INPUT_CAP_A"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "bash -c \"cat > data/diff_output.txt\""
+        }
+    ],
+    "edges": [
+        {
+            "id": "cat-to-sed",
+            "from": "cat",
+            "to": "sed"
+        },
+        {
+            "id": "cat-to-diff",
+            "from": "cat",
+            "to": "diff:INPUT_UNMOD"
+        },
+        {
+            "id": "sed-to-diff",
+            "from": "sed",
+            "to": "diff:INPUT_CAP_A"
+        },
+        {
+            "id": "diff-to-save",
+            "from": "diff",
+            "to": "save"
+        }
+    ]
+}
