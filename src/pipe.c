@@ -126,6 +126,18 @@ int pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
     return 0;
 }
 
+struct pipe *pipe_array_find_pipe_with_port(struct pipe_array *pa, char *port) {
+    if (pa->pipes == NULL) {
+        return NULL;
+    }
+    for (int i = 0; i < (int)pa->length; i++) {
+        if (strcmp(pa->pipes[i]->port, port) == 0) {
+            return pa->pipes[i];
+        }
+    }
+    return NULL;
+}
+
 int pipe_array_close(struct pipe_array *pa) {
     int res = 0;
     for (size_t i = 0u; i < pa->length; i++) {

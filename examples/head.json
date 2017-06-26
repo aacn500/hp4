@@ -1,0 +1,31 @@
+{
+    "nodes": [
+        {
+            "id": "producer",
+            "type": "EXEC",
+            "cmd": "rgen"
+        },
+        {
+            "id": "head",
+            "type": "EXEC",
+            "cmd": "head -c 100"
+        },
+        {
+            "id": "saver",
+            "type": "EXEC",
+            "cmd": "bash -c \"cat > head.txt\""
+        }
+    ],
+    "edges": [
+        {
+            "id": "prod-to-head",
+            "from": "producer",
+            "to": "head"
+        },
+        {
+            "id": "head-to-saver",
+            "from": "head",
+            "to": "saver"
+        }
+    ]
+}

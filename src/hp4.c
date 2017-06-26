@@ -37,15 +37,30 @@ int build_edges(struct p4_file *pf) {
         }
 
         if (strncmp(from->type, "EXEC\0", 5) == 0 && strncmp(to->type, "EXEC\0", 5) == 0) {
-            /* if from->out_pipes does NOT have a port named pe->from_port */
-            if (pipe_array_has_pipe_with_port(from->out_pipes, pe->from_port) == 0) {
+            struct pipe *p = pipe_array_find_pipe_with_port(from->out_pipes, pe->from_port);
+            /* if from->out_pipes does NOT have a pipe with from_port
+             * named pe->from_port, create a new pipe for that port */
+            if (p == NULL) {
                 if (pipe_array_append_new(from->out_pipes, pe->from_port, pe->id) < 0) {
                     return -1;
                 }
             }
-            /* if to->in_pipes does NOT have a port named pe->to_port */
-            if (pipe_array_has_pipe_with_port(to->in_pipes, pe->to_port) == 0) {
+            else {
+                if (pipe_append_edge_id(p, pe->id) < 0) {
+                    return -1;
+                }
+            }
+
+            p = pipe_array_find_pipe_with_port(to->in_pipes, pe->to_port);
+            /* if to->in_pipes does NOT have a pipe with to_port
+             * named pe->to_port, create a new pipe for that port */
+            if (p == NULL) {
                 if (pipe_array_append_new(to->in_pipes, pe->to_port, pe->id) < 0) {
+                    return -1;
+                }
+            }
+            else {
+                if (pipe_append_edge_id(p, pe->id) < 0) {
                     return -1;
                 }
             }
@@ -216,6 +231,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         return -1;
                     }
                     struct pipe *from_pipe = pn->out_pipes->pipes[j];
+                    rea->from_pipe = from_pipe;
                     int read_fd = from_pipe->read_fd;
                     int current_read_flags = fcntl(read_fd, F_GETFL, NULL);
                     if (current_read_flags < 0) {
@@ -261,6 +277,10 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     rea->bytes_safely_written = bytes_safely_written;
 
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
+                        struct p4_edge *edge = pn->listening_edges->edges[k];
+                        if (!pipe_has_edge_id(from_pipe, edge->id))
+                            continue;
+
                         struct writable_ev_args *wea = malloc(sizeof(*wea));
                         if (wea == NULL) {
                             REPORT_ERROR(strerror(errno));
@@ -272,7 +292,6 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         wea->to_pipe_idx = k;
                         wea->readable_event = readable;
                         wea->bytes_safely_written = bytes_safely_written;
-                        struct p4_edge *edge = pn->listening_edges->edges[k];
                         bytes_spliced[k] = &edge->bytes_spliced;
                         struct p4_node *dest = find_node_by_id(pf, edge->to);
                         if (dest == NULL) {
@@ -313,6 +332,15 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         struct event *writable = event_new(eb, to_pipe->write_fd,
                                                            EV_WRITE, writable_handler,
                                                            wea);
+                        if (event_array_append(dest->writable_events, writable) < 0) {
+                            event_array_free(rea->writable_events);
+                            free(rea);
+                            pipe_array_free(to_pipes);
+                            event_free(readable);
+                            free(bytes_spliced);
+                            free(wea);
+                            return -1;
+                        }
                         if (writable == NULL) {
                             REPORT_ERROR("Failed to create new writable event");
                             return -1;

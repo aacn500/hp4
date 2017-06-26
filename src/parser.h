@@ -5,6 +5,7 @@
 
 #include <jansson.h>
 
+#include "event_handlers.h"
 #include "pipe.h"
 
 struct p4_node {
@@ -16,6 +17,8 @@ struct p4_node {
 
     struct pipe_array *in_pipes;
     struct pipe_array *out_pipes;
+
+    struct event_array *writable_events;
 
     struct p4_edge_array *listening_edges;
 

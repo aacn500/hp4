@@ -33,6 +33,8 @@ int pipe_array_append(struct pipe_array *pa, struct pipe *pipe);
 
 int pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port);
 
+struct pipe *pipe_array_find_pipe_with_port(struct pipe_array *pa, char *port);
+
 int pipe_array_close(struct pipe_array *pa);
 
 int pipe_array_free(struct pipe_array *pa);

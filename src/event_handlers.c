@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -116,8 +117,8 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
         }
         else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
             ++sa->n_children_exited;
-            PRINT_DEBUG("%dth child process ended\n", sa->n_children_exited);
             struct p4_node *pn = find_node_by_pid(sa->pf, p);
+            PRINT_DEBUG("%dth child process ended; node %s\n", sa->n_children_exited, pn->id);
 
             if (pn == NULL) {
                 REPORT_ERROR("Failed to find a node which matching pid of "
@@ -143,6 +144,28 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
                         }
                         else if (close_successful == 0)
                             out_pipe->write_fd_is_open = 0;
+                    }
+                }
+            }
+
+            if (pn->writable_events) {
+                for (int k = 0; k < (int)pn->writable_events->length; k++) {
+                    struct event *wr_ev = pn->writable_events->events[k];
+                    if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL)) {
+                        PRINT_DEBUG("Node %s: A writable_handler event was in the queue when "
+                                    "node terminated exiting. Removing... ", pn->id);
+                        int success = event_del(wr_ev);
+                        if (success < 0)
+                            PRINT_DEBUG("Failed!\n");
+                        else if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL))
+                            PRINT_DEBUG("Seemed to succeed, but event is still in the queue!\n");
+                        else
+                            PRINT_DEBUG("Succeeded!\n");
+
+                        struct writable_ev_args *wea = event_get_callback_arg(wr_ev);
+                        /* readable_handler will notice that this node has closed,
+                         * and will close the upstream node's output as required */
+                        event_add(wea->readable_event, NULL);
                     }
                 }
             }
@@ -173,6 +196,9 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
 int write_single(struct writable_ev_args *wea) {
     int got_eof = 0;
     struct pipe *to_pipe = wea->to_pipes->pipes[0];
+    if (to_pipe->write_fd_is_open == 0) {
+        return 1;
+    }
     ssize_t bytes = splice(wea->from_pipe->read_fd,
                            NULL,
                            to_pipe->write_fd,
@@ -229,7 +255,7 @@ int write_multiple(struct writable_ev_args *wea) {
 
 void writable_handler(evutil_socket_t fd, short what, void *arg) {
     struct writable_ev_args *wea = arg;
-    int got_eof;
+    int got_eof = 0;
     int last_writable_handler = 1;
 
     if ((what & EV_WRITE) == 0) {
@@ -245,7 +271,8 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
         write_multiple(wea);
 
         for (int i = 0; i < (int)wea->to_pipes->length; i++) {
-            if (wea->to_pipes->pipes[i]->visited == 0) {
+            struct pipe *p = wea->to_pipes->pipes[i];
+            if (p->write_fd_is_open == 1 && p->visited == 0) {
                 /* Not all pipes' writable events have fired; do not yet
                  * splice to /dev/null or add readable event. */
                 last_writable_handler = 0;
@@ -296,7 +323,9 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
             }
         }
         else {
-            event_add(wea->readable_event, NULL);
+            int success = event_add(wea->readable_event, NULL);
+            if (success < 0)
+                PRINT_DEBUG("Not allowed to add readable handler\n");
         }
     }
 }
@@ -311,8 +340,30 @@ void readable_handler(evutil_socket_t fd, short what, void *arg) {
     for (int i = 0; i < (int)rea->to_pipes->length; i++) {
         rea->to_pipes->pipes[i]->visited = 0;
     }
+
+    int all_writable_fds_closed = 1;
     for (int j = 0; j < (int)rea->writable_events->length; j++) {
-        event_add(rea->writable_events->events[j], NULL);
+        struct event *ev = rea->writable_events->events[j];
+        if (ev == NULL)
+            continue;
+        /* Test if fd is still valid */
+        if (rea->to_pipes->pipes[j]->write_fd_is_open == 1) {
+            all_writable_fds_closed = 0;
+            int success = event_add(ev, NULL);
+            if (success < 0)
+                PRINT_DEBUG("Not allowed to add writable handler\n");
+        }
+        else {
+            free(event_get_callback_arg(ev));
+            event_free(ev);
+            rea->writable_events->events[j] = NULL;
+        }
+    }
+
+    if (all_writable_fds_closed) {
+        free(rea);
+        if (close(fd) == 0)
+            rea->from_pipe->read_fd_is_open = 0;
     }
 }
 

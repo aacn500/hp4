@@ -394,6 +394,12 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
         return -1;
     }
 
+    parsed_node->writable_events = event_array_new();
+    if (parsed_node->writable_events == NULL) {
+        json_decref(node);
+        return -1;
+    }
+
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */
     int valid_subtype = (parsed_node->subtype == NULL ||

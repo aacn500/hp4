@@ -24,6 +24,7 @@ struct writable_ev_args {
 
 struct readable_ev_args {
     struct event_array *writable_events;
+    struct pipe *from_pipe;
     struct pipe_array *to_pipes;
 
     size_t *bytes_safely_written;
