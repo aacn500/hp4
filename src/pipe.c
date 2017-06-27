@@ -8,6 +8,21 @@
 #include "debug.h"
 #include "pipe.h"
 
+int pipe_append_edge_id(struct pipe *p, const char *edge_id) {
+    char **new_edge_ids = realloc(p->edge_ids, p->n_edge_ids + 1);
+    if (new_edge_ids == NULL)
+        return -1;
+    p->edge_ids = new_edge_ids;
+    size_t id_len = strlen(edge_id) + 1;
+    p->edge_ids[p->n_edge_ids] = malloc(id_len);
+    if (p->edge_ids[p->n_edge_ids] == NULL) {
+        return -1;
+    }
+    strcpy(p->edge_ids[p->n_edge_ids], edge_id);
+    ++p->n_edge_ids;
+    return 0;
+}
+
 struct pipe *pipe_new(char *port, char *edge_id) {
     struct pipe *new_pipe = malloc(sizeof(*new_pipe));
     if (new_pipe == NULL) {
@@ -23,20 +38,37 @@ struct pipe *pipe_new(char *port, char *edge_id) {
     }
 
     PRINT_DEBUG("pipe_new {%d %d}\n", fds[0], fds[1]);
+
+    new_pipe->n_edge_ids = 0;
+    new_pipe->edge_ids = NULL;
+
+    if (pipe_append_edge_id(new_pipe, edge_id) < 0) {
+        free(new_pipe);
+        return NULL;
+    }
+
     new_pipe->read_fd = fds[0];
     new_pipe->read_fd_is_open = 1;
     new_pipe->write_fd = fds[1];
     new_pipe->write_fd_is_open = 1;
     new_pipe->port = port;
-    new_pipe->edge_id = edge_id;
     new_pipe->bytes_written = 0u;
     new_pipe->visited = 0;
     return new_pipe;
 }
 
+int pipe_has_edge_id(struct pipe *p, const char *edge_id) {
+    for (int i = 0; i < p->n_edge_ids; i++) {
+        if (strcmp(edge_id, p->edge_ids[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
     for (int i = 0; i < (int)pa->length; i++) {
-        if (strcmp(pa->pipes[i]->edge_id, edge_id) == 0) {
+        if (pipe_has_edge_id(pa->pipes[i], edge_id) == 1) {
             return pa->pipes[i];
         }
     }

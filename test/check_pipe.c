@@ -27,12 +27,12 @@ START_TEST(test_pipe_array) {
     struct pipe *p;
     p = find_pipe_by_edge_id(pa, "edge");
     ck_assert(p != NULL);
-    ck_assert_str_eq(p->edge_id, "edge");
+    ck_assert_str_eq(p->edge_ids[0], "edge");
     ck_assert_str_eq(p->port, "-");
 
     p = find_pipe_by_edge_id(pa, "edge2");
     ck_assert(p != NULL);
-    ck_assert_str_eq(p->edge_id, "edge2");
+    ck_assert_str_eq(p->edge_ids[0], "edge2");
     ck_assert_str_eq(p->port, "PORT");
 
     p = find_pipe_by_edge_id(pa, "no-edge");

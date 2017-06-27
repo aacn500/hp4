@@ -7,7 +7,8 @@ struct pipe {
     int write_fd;
     char write_fd_is_open;
     char *port;
-    char *edge_id;
+    char **edge_ids;
+    int n_edge_ids;
     size_t bytes_written;
     /* Flag whether writable callback has fired for this pipe */
     short visited;
@@ -17,6 +18,10 @@ struct pipe_array {
     struct pipe **pipes;
     size_t length;
 };
+
+int pipe_append_edge_id(struct pipe *p, const char *edge_id);
+
+int pipe_has_edge_id(struct pipe *p, const char *edge_id);
 
 struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id);
 
