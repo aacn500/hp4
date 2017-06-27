@@ -273,6 +273,34 @@ struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid) {
     return NULL;
 }
 
+struct p4_edge *find_edge_by_id(struct p4_file *pf, const char *edge_id) {
+    for (int i = 0; i < (int)pf->edges->length; i++) {
+        struct p4_edge *pe = pf->edges->edges[i];
+        if (strncmp(pe->id, edge_id, strlen(edge_id) + 1) == 0) {
+            return pe;
+        }
+    }
+    return NULL;
+}
+
+struct p4_node *find_from_node_by_edge_id(struct p4_file *pf, const char *edge_id) {
+    struct p4_edge *pe = find_edge_by_id(pf, edge_id);
+    if (pe == NULL) {
+        /* No edge with that id */
+        return NULL;
+    }
+    return find_node_by_id(pf, pe->from);
+}
+
+struct p4_node *find_to_node_by_edge_id(struct p4_file *pf, const char *edge_id) {
+    struct p4_edge *pe = find_edge_by_id(pf, edge_id);
+    if (pe == NULL) {
+        /* No edge with that id */
+        return NULL;
+    }
+    return find_node_by_id(pf, pe->to);
+}
+
 int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     json_incref(node);
     if (!json_is_object(node)) {

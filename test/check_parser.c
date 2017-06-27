@@ -99,9 +99,52 @@ START_TEST(test_find_node_by_id) {
     ck_assert_str_eq(pn_cat->type, "EXEC");
     ck_assert_str_eq(pn_cat->cmd, "cat");
 
-
     struct p4_node *pn_na = find_node_by_id(pf, "NONE");
     ck_assert(pn_na == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_find_edge_by_id) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+    struct p4_edge *pe = find_edge_by_id(pf, "cat-to-save");
+    ck_assert_str_eq(pe->id, "cat-to-save");
+    ck_assert_str_eq(pe->from, "cat");
+    ck_assert_str_eq(pe->to, "save");
+
+    struct p4_edge *pe_na = find_edge_by_id(pf, "NONE");
+    ck_assert(pe_na == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_find_from_node_by_edge_id) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+    struct p4_node *pn = find_from_node_by_edge_id(pf, "cat-to-save");
+    ck_assert_str_eq(pn->id, "cat");
+    ck_assert_str_eq(pn->type, "EXEC");
+    ck_assert_str_eq(pn->cmd, "cat");
+
+    struct p4_node *pn_na = find_from_node_by_edge_id(pf, "NONE");
+    ck_assert(pn_na == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_find_to_node_by_edge_id) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+    struct p4_node *pn = find_to_node_by_edge_id(pf, "cat-to-save");
+    ck_assert_str_eq(pn->id, "save");
+    ck_assert_str_eq(pn->type, "EXEC");
+    ck_assert_str_eq(pn->cmd, "save");
+
+    struct p4_node *pn_na = find_to_node_by_edge_id(pf, "NONE");
+    ck_assert(pn_na == NULL);
+
+    free_p4_file(pf);
 }
 END_TEST
 
@@ -114,8 +157,11 @@ Suite *parser_suite(void) {
     tcase_add_test(tc_parse, parse_ports_file);
     suite_add_tcase(s, tc_parse);
 
-    TCase *tc_find_node = tcase_create("find node");
+    TCase *tc_find_node = tcase_create("find nodes and edges");
     tcase_add_test(tc_find_node, test_find_node_by_id);
+    tcase_add_test(tc_find_node, test_find_edge_by_id);
+    tcase_add_test(tc_find_node, test_find_from_node_by_edge_id);
+    tcase_add_test(tc_find_node, test_find_to_node_by_edge_id);
     suite_add_tcase(s, tc_find_node);
 
     return s;
