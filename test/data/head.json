@@ -1,0 +1,32 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            ".comment": "`cat` gets unhappy when it receives sigpipe. this is expected and should not cause an error in pexpect.",
+            "cmd": "bash -c \"cat data/largefile.txt 2>/dev/null\""
+        },
+        {
+            "id": "head",
+            "type": "EXEC",
+            "cmd": "head -n3"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "bash -c \"cat > data/head.txt\""
+        }
+    ],
+    "edges": [
+        {
+            "id": "cat-to-head",
+            "from": "cat",
+            "to": "head"
+        },
+        {
+            "id": "head-to-save",
+            "from": "head",
+            "to": "save"
+        }
+    ]
+}

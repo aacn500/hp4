@@ -103,6 +103,28 @@ def test_join_with_ports():
 
     os.remove(script_dir + "/data/diff_output.txt")
 
+
+def test_head():
+    """
+    Tests that hp4 correctly closes a node's output when its
+    downstream node exits before EOF.
+    """
+    child = pexpect.spawn(script_dir + "/../src/hp4 -f " +
+                          script_dir + "/data/head.json")
+
+    out = []
+    for line in child:
+        out.append(json.loads(line.decode()))
+
+    assert out[-1]["cat-to-head"] >= out[-1]["head-to-save"]
+    assert out[-1]["head-to-save"] == 150
+    with open(script_dir + "/data/head.txt", 'r') as f:
+        for line in f:
+            assert line == "Lorem ipsum dolor sit amet, consectetur volutpat.\n"
+
+    os.remove(script_dir + "/data/head.txt")
+
+
 if __name__ == "__main__":
     file_gen.generate_largefile(script_dir + "/data/")
     file_gen.generate_testfile(script_dir + "/data/smallfile.txt", 51)

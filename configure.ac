@@ -22,6 +22,9 @@ PKG_CHECK_MODULES([CHECK], [check >= 0.9.4],
                   [check_present=yes], [check_present=no])
 AM_CONDITIONAL(HAVE_CHECK, test "x$check_present" = "xyes")
 
+AC_CHECK_FUNCS([splice tee], [],
+               AC_MSG_ERROR([unable to find splice and tee functions. Is this system's kernel linux >= 2.6.17?]))
+
 AC_CHECK_LIB([event], [event_base_new], [],
              AC_MSG_ERROR([unable to find libevent]))
 AC_CHECK_LIB([jansson], [json_string_length], [],
