@@ -18,14 +18,16 @@ int create_stats_file(struct p4_file *pf) {
     }
 
     for (int i = 0; i < (int)pf->edges->length; i++) {
-        json_t *json_bytes = json_integer((json_int_t)pf->edges->edges[i]->bytes_spliced);
+        struct p4_edge *pe = p4_file_get_edge(pf, i);
+
+        json_t *json_bytes = json_integer((json_int_t)pe->bytes_spliced);
         if (json_bytes == NULL) {
             REPORT_ERROR("Failed to create new json int");
             json_decref(json_byte_counters);
             return -1;
         }
 
-        if (json_object_set_new(json_byte_counters, pf->edges->edges[i]->id, json_bytes) < 0) {
+        if (json_object_set_new(json_byte_counters, pe->id, json_bytes) < 0) {
             REPORT_ERROR("Failed to set property on json object");
             json_decref(json_bytes);
             json_decref(json_byte_counters);

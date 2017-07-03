@@ -1,6 +1,8 @@
 #ifndef HP4_EVENT_HANDLERS_H
 #define HP4_EVENT_HANDLERS_H
 
+#include <stdbool.h>
+
 #include <event2/event.h>
 
 #include "parser.h"

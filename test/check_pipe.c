@@ -42,6 +42,32 @@ START_TEST(test_pipe_array) {
 }
 END_TEST
 
+START_TEST(test_get_pipe) {
+    int success;
+
+    struct pipe_array *pa = pipe_array_new();
+    ck_assert(pa != NULL);
+
+    struct pipe *p = get_pipe(pa, 0);
+    ck_assert(p == NULL);
+
+    success = pipe_array_append_new(pa, "-", "edge");
+    ck_assert_int_eq(success, 0);
+    ck_assert_uint_eq(pa->length, 1u);
+
+    p = get_pipe(pa, 0);
+    ck_assert(p != NULL);
+    ck_assert_str_eq(p->edge_ids[0], "edge");
+    ck_assert_str_eq(p->port, "-");
+
+    p = get_pipe(pa, -1);
+    ck_assert(p == NULL);
+
+    p = get_pipe(pa, 2);
+    ck_assert(p == NULL);
+}
+END_TEST
+
 START_TEST(test_pipe_open_and_close) {
     int success;
 
@@ -79,6 +105,7 @@ Suite *pipe_suite(void) {
 
     TCase *tc_pipe_array = tcase_create("pipe array");
     tcase_add_test(tc_pipe_array, test_pipe_array);
+    tcase_add_test(tc_pipe_array, test_get_pipe);
     suite_add_tcase(s, tc_pipe_array);
 
     TCase *tc_open_and_close = tcase_create("pipe open and close");

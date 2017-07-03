@@ -63,6 +63,14 @@ struct p4_node *find_from_node_by_edge_id(struct p4_file *pf, const char *edge_i
 
 struct p4_node *find_to_node_by_edge_id(struct p4_file *pf, const char *edge_id);
 
+struct p4_node *get_node(struct p4_node_array *nodes, int idx);
+
+struct p4_node *p4_file_get_node(struct p4_file *pf, int idx);
+
+struct p4_edge *get_edge(struct p4_edge_array *edges, int idx);
+
+struct p4_edge *p4_file_get_edge(struct p4_file *pf, int idx);
+
 struct p4_file *p4_file_new(const char *filename);
 
 void free_p4_file(struct p4_file *pf);

@@ -21,6 +21,8 @@ struct pipe_array {
     size_t length;
 };
 
+struct pipe *get_pipe(struct pipe_array *pa, int idx);
+
 int pipe_append_edge_id(struct pipe *p, const char *edge_id);
 
 bool pipe_has_edge_id(struct pipe *p, const char *edge_id);

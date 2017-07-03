@@ -24,7 +24,11 @@
 
 int build_edges(struct p4_file *pf) {
     for (int i=0; i < (int)pf->edges->length; i++) {
-        struct p4_edge *pe = pf->edges->edges[i];
+        struct p4_edge *pe = p4_file_get_edge(pf, i);
+        if (pe == NULL) {
+            REPORT_ERROR("did not find edge");
+            return -1;
+        }
         struct p4_node *from = find_node_by_id(pf, pe->from);
         if (from == NULL) {
             fprintf(stderr, " ERROR: No node found with id %s\n", pe->from);
@@ -118,7 +122,7 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
     int def_sin = 1;
     int def_sout = 1;
     for (int m = 0; m < (int)pn->out_pipes->length; m++) {
-        struct pipe *out_pipe = pn->out_pipes->pipes[m];
+        struct pipe *out_pipe = get_pipe(pn->out_pipes, m);
         if (strcmp(out_pipe->port, "-") == 0) {
             if (def_sout == 0) {
                 // TODO this means that another pipe has already changed this node's
@@ -154,7 +158,7 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
     }
 
     for (int o = 0; o < (int)pn->in_pipes->length; o++) {
-        struct pipe *in_pipe = pn->in_pipes->pipes[o];
+        struct pipe *in_pipe = get_pipe(pn->in_pipes, o);
         if (strcmp(in_pipe->port, "-") == 0) {
             if (def_sin == 0) {
                 // TODO this means that another pipe has already changed this node's
@@ -189,7 +193,7 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
         }
     }
     for (int q = 0; q < (int)pf->nodes->length; q++) {
-        struct p4_node *po = pf->nodes->nodes[q];
+        struct p4_node *po = p4_file_get_node(pf, q);
         if (po->in_pipes && pipe_array_close(po->in_pipes) < 0) {
             return -1;
         }
@@ -212,7 +216,7 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
 
 int build_nodes(struct p4_file *pf, struct event_base *eb) {
     for (int i=0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *pn = pf->nodes->nodes[i];
+        struct p4_node *pn = p4_file_get_node(pf, i);
         if (strncmp(pn->type, "EXEC\0", 5) == 0) {
             if (pn->in_pipes->length == 0u && pn->out_pipes->length == 0u) {
                 // node is not joined to the graph, skip
@@ -230,7 +234,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                         REPORT_ERROR(strerror(errno));
                         return -1;
                     }
-                    struct pipe *from_pipe = pn->out_pipes->pipes[j];
+                    struct pipe *from_pipe = get_pipe(pn->out_pipes, j);
                     rea->from_pipe = from_pipe;
                     int read_fd = from_pipe->read_fd;
                     int current_read_flags = fcntl(read_fd, F_GETFL, NULL);
@@ -277,7 +281,11 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                     rea->bytes_safely_written = bytes_safely_written;
 
                     for (int k = 0; k < (int)pn->listening_edges->length; k++) {
-                        struct p4_edge *edge = pn->listening_edges->edges[k];
+                        struct p4_edge *edge = get_edge(pn->listening_edges, k);
+                        if (edge == NULL) {
+                            REPORT_ERROR("Failed to get edge from listening_edges");
+                            return -1;
+                        }
                         if (!pipe_has_edge_id(from_pipe, edge->id))
                             continue;
 
@@ -462,10 +470,12 @@ int main(int argc, char **argv) {
 
     struct p4_file *pf = p4_file_new(args.graph_file);
     if (pf == NULL) {
+        REPORT_ERROR("Failed to create new p4_file");
         return 1;
     }
 
     if (open_dev_null() < 0) {
+        REPORT_ERROR("Failed to open /dev/null for writing");
         free_p4_file(pf);
         return 1;
     }
@@ -515,6 +525,7 @@ int main(int argc, char **argv) {
     }
 
     if (build_edges(pf) == -1) {
+        REPORT_ERROR("Failed to build edges");
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);
@@ -523,6 +534,7 @@ int main(int argc, char **argv) {
     }
 
     if (build_nodes(pf, eb) == -1) {
+        REPORT_ERROR("Failed to build nodes");
         event_free(sigchldev);
         event_free(sigintev);
         event_base_free(eb);

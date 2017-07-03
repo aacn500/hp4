@@ -255,7 +255,7 @@ void free_p4_node_array(struct p4_node_array *nodes) {
 
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
     for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *pn = pf->nodes->nodes[i];
+        struct p4_node *pn = p4_file_get_node(pf, i);
         if (strncmp(pn->id, id, strlen(id) + 1) == 0) {
             return pn;
         }
@@ -265,7 +265,7 @@ struct p4_node *find_node_by_id(struct p4_file *pf, const char *id) {
 
 struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid) {
     for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *pn = pf->nodes->nodes[i];
+        struct p4_node *pn = p4_file_get_node(pf, i);
         if (pid == pn->pid) {
             return pn;
         }
@@ -275,12 +275,34 @@ struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid) {
 
 struct p4_edge *find_edge_by_id(struct p4_file *pf, const char *edge_id) {
     for (int i = 0; i < (int)pf->edges->length; i++) {
-        struct p4_edge *pe = pf->edges->edges[i];
+        struct p4_edge *pe = p4_file_get_edge(pf, i);
         if (strncmp(pe->id, edge_id, strlen(edge_id) + 1) == 0) {
             return pe;
         }
     }
     return NULL;
+}
+
+struct p4_node *get_node(struct p4_node_array *nodes, int idx) {
+    if (idx < 0 || (unsigned int)idx >= nodes->length) {
+        return NULL;
+    }
+    return nodes->nodes[idx];
+}
+
+struct p4_node *p4_file_get_node(struct p4_file *pf, int idx) {
+    return get_node(pf->nodes, idx);
+}
+
+struct p4_edge *get_edge(struct p4_edge_array *edges, int idx) {
+    if (idx < 0 || (unsigned int)idx >= edges->length) {
+        return NULL;
+    }
+    return edges->edges[idx];
+}
+
+struct p4_edge *p4_file_get_edge(struct p4_file *pf, int idx) {
+    return get_edge(pf->edges, idx);
 }
 
 struct p4_node *find_from_node_by_edge_id(struct p4_file *pf, const char *edge_id) {
@@ -527,7 +549,7 @@ struct p4_file *p4_file_new(const char *filename) {
 int validate_p4_file(struct p4_file *pf) {
     // FIXME need to expand validations
     for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *node = pf->nodes->nodes[i];
+        struct p4_node *node = p4_file_get_node(pf, i);
         if (node->id == NULL) {
             REPORT_ERROR("One or more nodes do not have an id.");
             return 0;

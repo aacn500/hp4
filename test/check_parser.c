@@ -92,6 +92,104 @@ START_TEST(parse_ports_file) {
 }
 END_TEST
 
+START_TEST(test_get_node) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+    struct p4_node_array *pna = pf->nodes;
+
+    size_t n_nodes = pna->length;
+    ck_assert_uint_eq(n_nodes, 2);
+
+    struct p4_node *pn;
+
+    pn = get_node(pna, 0);
+    ck_assert(pn != NULL);
+    ck_assert_str_eq(pn->id, "cat");
+    ck_assert_str_eq(pn->cmd, "cat");
+    ck_assert_str_eq(pn->type, "EXEC");
+
+    pn = get_node(pna, -1);
+    ck_assert(pn == NULL);
+
+    pn = get_node(pna, n_nodes);
+    ck_assert(pn == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_p4_file_get_node) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+
+    size_t n_nodes = pf->nodes->length;
+    ck_assert_uint_eq(n_nodes, 2);
+
+    struct p4_node *pn;
+
+    pn = p4_file_get_node(pf, 0);
+    ck_assert(pn != NULL);
+    ck_assert_str_eq(pn->id, "cat");
+    ck_assert_str_eq(pn->cmd, "cat");
+    ck_assert_str_eq(pn->type, "EXEC");
+
+    pn = p4_file_get_node(pf, -1);
+    ck_assert(pn == NULL);
+
+    pn = p4_file_get_node(pf, n_nodes);
+    ck_assert(pn == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_get_edge) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+    struct p4_edge_array *pea = pf->edges;
+
+    size_t n_edges = pea->length;
+    ck_assert_uint_eq(n_edges, 1);
+
+    struct p4_edge *pe;
+
+    pe = get_edge(pea, 0);
+    ck_assert(pe != NULL);
+    ck_assert_str_eq(pe->id, "cat-to-save");
+    ck_assert_str_eq(pe->from, "cat");
+    ck_assert_str_eq(pe->to, "save");
+
+    pe = get_edge(pea, -1);
+    ck_assert(pe == NULL);
+
+    pe = get_edge(pea, n_edges);
+    ck_assert(pe == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
+START_TEST(test_p4_file_get_edge) {
+    struct p4_file *pf = p4_file_new("data/basic.json");
+
+    size_t n_edges = pf->edges->length;
+    ck_assert_uint_eq(n_edges, 1);
+
+    struct p4_edge *pe;
+
+    pe = p4_file_get_edge(pf, 0);
+    ck_assert(pe != NULL);
+    ck_assert_str_eq(pe->id, "cat-to-save");
+    ck_assert_str_eq(pe->from, "cat");
+    ck_assert_str_eq(pe->to, "save");
+
+    pe = p4_file_get_edge(pf, -1);
+    ck_assert(pe == NULL);
+
+    pe = p4_file_get_edge(pf, n_edges);
+    ck_assert(pe == NULL);
+
+    free_p4_file(pf);
+}
+END_TEST
+
 START_TEST(test_find_node_by_id) {
     struct p4_file *pf = p4_file_new("data/basic.json");
     struct p4_node *pn_cat = find_node_by_id(pf, "cat");
@@ -157,12 +255,19 @@ Suite *parser_suite(void) {
     tcase_add_test(tc_parse, parse_ports_file);
     suite_add_tcase(s, tc_parse);
 
-    TCase *tc_find_node = tcase_create("find nodes and edges");
+    TCase *tc_find_node = tcase_create("find nodes");
+    tcase_add_test(tc_find_node, test_get_node);
+    tcase_add_test(tc_find_node, test_p4_file_get_node);
     tcase_add_test(tc_find_node, test_find_node_by_id);
-    tcase_add_test(tc_find_node, test_find_edge_by_id);
     tcase_add_test(tc_find_node, test_find_from_node_by_edge_id);
     tcase_add_test(tc_find_node, test_find_to_node_by_edge_id);
     suite_add_tcase(s, tc_find_node);
+
+    TCase *tc_find_edge = tcase_create("find edges");
+    tcase_add_test(tc_find_edge, test_get_edge);
+    tcase_add_test(tc_find_edge, test_p4_file_get_edge);
+    tcase_add_test(tc_find_edge, test_find_edge_by_id);
+    suite_add_tcase(s, tc_find_edge);
 
     return s;
 }

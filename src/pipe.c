@@ -9,6 +9,13 @@
 #include "debug.h"
 #include "pipe.h"
 
+struct pipe *get_pipe(struct pipe_array *pa, int idx) {
+    if (idx < 0 || (unsigned int)idx >= pa->length) {
+        return NULL;
+    }
+    return pa->pipes[idx];
+}
+
 int pipe_append_edge_id(struct pipe *p, const char *edge_id) {
     char **new_edge_ids = realloc(p->edge_ids, p->n_edge_ids + 1);
     if (new_edge_ids == NULL)
@@ -69,8 +76,9 @@ bool pipe_has_edge_id(struct pipe *p, const char *edge_id) {
 
 struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
     for (int i = 0; i < (int)pa->length; i++) {
-        if (pipe_has_edge_id(pa->pipes[i], edge_id) == 1) {
-            return pa->pipes[i];
+        struct pipe *p = get_pipe(pa, i);
+        if (pipe_has_edge_id(p, edge_id) == 1) {
+            return p;
         }
     }
     return NULL;
@@ -120,7 +128,8 @@ bool pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
         return false;
     }
     for (int i = 0; i < (int)pa->length; i++) {
-        if (strcmp(pa->pipes[i]->port, port) == 0) {
+        struct pipe *p = get_pipe(pa, i);
+        if (strcmp(p->port, port) == 0) {
             return true;
         }
     }
@@ -132,8 +141,9 @@ struct pipe *pipe_array_find_pipe_with_port(struct pipe_array *pa, char *port) {
         return NULL;
     }
     for (int i = 0; i < (int)pa->length; i++) {
-        if (strcmp(pa->pipes[i]->port, port) == 0) {
-            return pa->pipes[i];
+        struct pipe *p = get_pipe(pa, i);
+        if (strcmp(p->port, port) == 0) {
+            return p;
         }
     }
     return NULL;
