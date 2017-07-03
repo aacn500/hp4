@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -131,19 +132,19 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
                         pn->id, strerror(errno));
             }
 
-            pn->ended = 1;
+            pn->ended = true;
 
             if (pn->out_pipes) {
                 for (int i = 0; i < (int)pn->out_pipes->length; i++) {
                     struct pipe *out_pipe = pn->out_pipes->pipes[i];
-                    if (out_pipe->write_fd_is_open == 1) {
+                    if (out_pipe->write_fd_is_open) {
                         int close_successful = close(out_pipe->write_fd);
                         if (close_successful < 0) {
                             PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
                                     pn->id, out_pipe->edge_ids[0], strerror(errno));
                         }
                         else if (close_successful == 0)
-                            out_pipe->write_fd_is_open = 0;
+                            out_pipe->write_fd_is_open = false;
                     }
                 }
             }
@@ -196,7 +197,7 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
 int write_single(struct writable_ev_args *wea) {
     int got_eof = 0;
     struct pipe *to_pipe = wea->to_pipes->pipes[0];
-    if (to_pipe->write_fd_is_open == 0) {
+    if (!to_pipe->write_fd_is_open) {
         return 1;
     }
     ssize_t bytes = splice(wea->from_pipe->read_fd,
@@ -249,7 +250,7 @@ int write_multiple(struct writable_ev_args *wea) {
         *wea->bytes_safely_written = wea->to_pipes->pipes[i]->bytes_written;
     }
 
-    to_pipe->visited = 1;
+    to_pipe->visited = true;
     return 0;
 }
 
@@ -272,7 +273,7 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
 
         for (int i = 0; i < (int)wea->to_pipes->length; i++) {
             struct pipe *p = wea->to_pipes->pipes[i];
-            if (p->write_fd_is_open == 1 && p->visited == 0) {
+            if (p->write_fd_is_open && !p->visited) {
                 /* Not all pipes' writable events have fired; do not yet
                  * splice to /dev/null or add readable event. */
                 last_writable_handler = 0;
@@ -314,12 +315,12 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
             struct pipe *from_pipe = wea->from_pipe;
             PRINT_DEBUG("Edge %s (and possibly others) got EOF; closing pipes...\n",
                         from_pipe->edge_ids[0]);
-            if (from_pipe->read_fd_is_open == 1 && close(from_pipe->read_fd) == 0)
-                from_pipe->read_fd_is_open = 0;
+            if (from_pipe->read_fd_is_open && close(from_pipe->read_fd) == 0)
+                from_pipe->read_fd_is_open = false;
             for (int k = 0; k < (int)wea->to_pipes->length; k++) {
                 struct pipe *to_pipe = wea->to_pipes->pipes[k];
-                if (to_pipe->write_fd_is_open == 1 && close(to_pipe->write_fd) == 0)
-                    to_pipe->write_fd_is_open = 0;
+                if (to_pipe->write_fd_is_open && close(to_pipe->write_fd) == 0)
+                    to_pipe->write_fd_is_open = false;
             }
         }
         else {
@@ -338,7 +339,7 @@ void readable_handler(evutil_socket_t fd, short what, void *arg) {
 
     *rea->bytes_safely_written = SIZE_MAX;
     for (int i = 0; i < (int)rea->to_pipes->length; i++) {
-        rea->to_pipes->pipes[i]->visited = 0;
+        rea->to_pipes->pipes[i]->visited = false;
     }
 
     int all_writable_fds_closed = 1;
@@ -347,7 +348,7 @@ void readable_handler(evutil_socket_t fd, short what, void *arg) {
         if (ev == NULL)
             continue;
         /* Test if fd is still valid */
-        if (rea->to_pipes->pipes[j]->write_fd_is_open == 1) {
+        if (rea->to_pipes->pipes[j]->write_fd_is_open) {
             all_writable_fds_closed = 0;
             int success = event_add(ev, NULL);
             if (success < 0)
@@ -363,7 +364,7 @@ void readable_handler(evutil_socket_t fd, short what, void *arg) {
     if (all_writable_fds_closed) {
         free(rea);
         if (close(fd) == 0)
-            rea->from_pipe->read_fd_is_open = 0;
+            rea->from_pipe->read_fd_is_open = false;
     }
 }
 

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -48,22 +49,22 @@ struct pipe *pipe_new(char *port, char *edge_id) {
     }
 
     new_pipe->read_fd = fds[0];
-    new_pipe->read_fd_is_open = 1;
+    new_pipe->read_fd_is_open = true;
     new_pipe->write_fd = fds[1];
-    new_pipe->write_fd_is_open = 1;
+    new_pipe->write_fd_is_open = true;
     new_pipe->port = port;
     new_pipe->bytes_written = 0u;
     new_pipe->visited = 0;
     return new_pipe;
 }
 
-int pipe_has_edge_id(struct pipe *p, const char *edge_id) {
+bool pipe_has_edge_id(struct pipe *p, const char *edge_id) {
     for (int i = 0; i < p->n_edge_ids; i++) {
         if (strcmp(edge_id, p->edge_ids[i]) == 0) {
-            return 1;
+            return true;
         }
     }
-    return 0;
+    return false;
 }
 
 struct pipe *find_pipe_by_edge_id(struct pipe_array *pa, char *edge_id) {
@@ -114,16 +115,16 @@ int pipe_array_append(struct pipe_array *pa, struct pipe *pipe) {
     return 0;
 }
 
-int pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
+bool pipe_array_has_pipe_with_port(struct pipe_array *pa, char *port) {
     if (pa->pipes == NULL) {
-        return 0;
+        return false;
     }
     for (int i = 0; i < (int)pa->length; i++) {
         if (strcmp(pa->pipes[i]->port, port) == 0) {
-            return 1;
+            return true;
         }
     }
-    return 0;
+    return false;
 }
 
 struct pipe *pipe_array_find_pipe_with_port(struct pipe_array *pa, char *port) {
@@ -161,19 +162,19 @@ int close_pipe(struct pipe *pipe_to_close) {
     PRINT_DEBUG("close_pipe {%d %d}\n", pipe_to_close->read_fd,
                                         pipe_to_close->write_fd);
     int result = 0;
-    if (pipe_to_close->read_fd_is_open == 1) {
+    if (pipe_to_close->read_fd_is_open) {
         int close_read = close(pipe_to_close->read_fd);
         if (close_read == 0)
-            pipe_to_close->read_fd_is_open = 0;
+            pipe_to_close->read_fd_is_open = false;
         else if (close_read < 0)
             PRINT_DEBUG("Closing pipe read_fd failed: %s\n",
                           strerror(errno));
         result |= close_read;
     }
-    if (pipe_to_close->write_fd_is_open == 1) {
+    if (pipe_to_close->write_fd_is_open) {
         int close_write = close(pipe_to_close->write_fd);
         if (close_write == 0)
-            pipe_to_close->write_fd_is_open = 0;
+            pipe_to_close->write_fd_is_open = false;
         else if (close_write < 0)
             PRINT_DEBUG("Closing pipe write_fd failed: %s\n",
                           strerror(errno));

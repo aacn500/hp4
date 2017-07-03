@@ -2,6 +2,7 @@
 #define HP4_PARSER_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <jansson.h>
 
@@ -23,7 +24,7 @@ struct p4_node {
     struct p4_edge_array *listening_edges;
 
     pid_t pid;
-    short ended;
+    bool ended;
 };
 
 struct p4_node_array {

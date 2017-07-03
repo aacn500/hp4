@@ -51,26 +51,26 @@ START_TEST(test_pipe_open_and_close) {
     success = pipe_array_append_new(pa, "-", "edge");
     ck_assert_int_eq(success, 0);
     ck_assert_uint_eq(pa->length, 1u);
-    ck_assert_int_eq(pa->pipes[0]->read_fd_is_open, 1);
-    ck_assert_int_eq(pa->pipes[0]->write_fd_is_open, 1);
+    ck_assert(pa->pipes[0]->read_fd_is_open);
+    ck_assert(pa->pipes[0]->write_fd_is_open);
 
     success = close_pipe(pa->pipes[0]);
     ck_assert_int_eq(success, 0);
     ck_assert_uint_eq(pa->length, 1u);
-    ck_assert_int_eq(pa->pipes[0]->read_fd_is_open, 0);
-    ck_assert_int_eq(pa->pipes[0]->write_fd_is_open, 0);
+    ck_assert(!pa->pipes[0]->read_fd_is_open);
+    ck_assert(!pa->pipes[0]->write_fd_is_open);
 
     success = pipe_array_append_new(pa, "-2", "edge2");
     ck_assert_int_eq(success, 0);
     ck_assert_uint_eq(pa->length, 2u);
-    ck_assert_int_eq(pa->pipes[1]->read_fd_is_open, 1);
-    ck_assert_int_eq(pa->pipes[1]->write_fd_is_open, 1);
+    ck_assert(pa->pipes[1]->read_fd_is_open);
+    ck_assert(pa->pipes[1]->write_fd_is_open);
 
     success = pipe_array_close(pa);
     ck_assert_int_eq(success, 0);
     ck_assert_uint_eq(pa->length, 2u);
-    ck_assert_int_eq(pa->pipes[1]->read_fd_is_open, 0);
-    ck_assert_int_eq(pa->pipes[1]->write_fd_is_open, 0);
+    ck_assert(!pa->pipes[1]->read_fd_is_open);
+    ck_assert(!pa->pipes[1]->write_fd_is_open);
 }
 END_TEST
 

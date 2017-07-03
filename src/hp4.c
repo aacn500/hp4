@@ -376,7 +376,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
             } // end child
             else {
                 pn->pid = pid;
-                pn->ended = 0;
+                pn->ended = false;
             }
         }
         else {
