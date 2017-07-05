@@ -88,6 +88,74 @@ void sigint_handler(evutil_socket_t fd, short what, void *arg) {
     }
 }
 
+void close_node(pid_t p, struct sigchld_args *sa) {
+    ++sa->n_children_exited;
+    struct p4_node *pn = find_node_by_pid(sa->pf, p);
+    PRINT_DEBUG("%dth child process ended; node %s\n", sa->n_children_exited, pn->id);
+
+    if (pn == NULL) {
+        REPORT_ERROR("Failed to find a node which matching pid of "
+                     "recently-closed child process");
+        return;
+    }
+
+    if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
+        PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
+                pn->id, strerror(errno));
+    }
+
+    pn->ended = true;
+
+    if (pn->out_pipes) {
+        for (int i = 0; i < (int)pn->out_pipes->length; i++) {
+            struct pipe *out_pipe = get_pipe(pn->out_pipes, i);
+            if (out_pipe->write_fd_is_open) {
+                int close_successful = close(out_pipe->write_fd);
+                if (close_successful < 0) {
+                    PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
+                            pn->id, out_pipe->edge_ids[0], strerror(errno));
+                }
+                else if (close_successful == 0)
+                    out_pipe->write_fd_is_open = false;
+            }
+        }
+    }
+
+    if (pn->writable_events) {
+        for (int k = 0; k < (int)pn->writable_events->length; k++) {
+            struct event *wr_ev = pn->writable_events->events[k];
+            if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL)) {
+                PRINT_DEBUG("Node %s: A writable_handler event was in the queue when "
+                            "node terminated exiting. Removing... ", pn->id);
+                int success = event_del(wr_ev);
+                if (success < 0)
+                    PRINT_DEBUG("Failed!\n");
+                else if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL))
+                    PRINT_DEBUG("Seemed to succeed, but event is still in the queue!\n");
+                else
+                    PRINT_DEBUG("Succeeded!\n");
+
+                struct writable_ev_args *wea = event_get_callback_arg(wr_ev);
+                /* readable_handler will notice that this node has closed,
+                 * and will close the upstream node's output as required */
+                event_add(wea->readable_event, NULL);
+            }
+        }
+    }
+
+    for (int j = 0; j < (int)sa->pf->edges->length; j++) {
+        struct p4_edge *pe = p4_file_get_edge(sa->pf, j);
+        if (strcmp(pe->to, pn->id) == 0) {
+            PRINT_DEBUG("edge %s finished after splicing %ld bytes\n",
+                   pe->id, pe->bytes_spliced);
+        }
+    }
+
+    if (sa->n_children_exited == (int)sa->pf->nodes->length) {
+        event_base_loopexit(sa->eb, NULL);
+    }
+}
+
 void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
     PRINT_DEBUG("killing child...\n");
     struct sigchld_args *sa = arg;
@@ -117,71 +185,7 @@ void sigchld_handler(evutil_socket_t fd, short what, void *arg) {
             break;
         }
         else if (WIFEXITED(status) || (WIFSIGNALED(status) && WTERMSIG(status) == 13)) {
-            ++sa->n_children_exited;
-            struct p4_node *pn = find_node_by_pid(sa->pf, p);
-            PRINT_DEBUG("%dth child process ended; node %s\n", sa->n_children_exited, pn->id);
-
-            if (pn == NULL) {
-                REPORT_ERROR("Failed to find a node which matching pid of "
-                             "recently-closed child process");
-                return;
-            }
-
-            if (pn->in_pipes && pipe_array_close(pn->in_pipes) < 0) {
-                PRINT_DEBUG("Closing all incoming pipes to node %s failed: %s\n",
-                        pn->id, strerror(errno));
-            }
-
-            pn->ended = true;
-
-            if (pn->out_pipes) {
-                for (int i = 0; i < (int)pn->out_pipes->length; i++) {
-                    struct pipe *out_pipe = get_pipe(pn->out_pipes, i);
-                    if (out_pipe->write_fd_is_open) {
-                        int close_successful = close(out_pipe->write_fd);
-                        if (close_successful < 0) {
-                            PRINT_DEBUG("Closing outgoing pipe from node %s on edge %s failed: %s\n",
-                                    pn->id, out_pipe->edge_ids[0], strerror(errno));
-                        }
-                        else if (close_successful == 0)
-                            out_pipe->write_fd_is_open = false;
-                    }
-                }
-            }
-
-            if (pn->writable_events) {
-                for (int k = 0; k < (int)pn->writable_events->length; k++) {
-                    struct event *wr_ev = pn->writable_events->events[k];
-                    if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL)) {
-                        PRINT_DEBUG("Node %s: A writable_handler event was in the queue when "
-                                    "node terminated exiting. Removing... ", pn->id);
-                        int success = event_del(wr_ev);
-                        if (success < 0)
-                            PRINT_DEBUG("Failed!\n");
-                        else if (event_pending(wr_ev, EV_READ|EV_WRITE, NULL))
-                            PRINT_DEBUG("Seemed to succeed, but event is still in the queue!\n");
-                        else
-                            PRINT_DEBUG("Succeeded!\n");
-
-                        struct writable_ev_args *wea = event_get_callback_arg(wr_ev);
-                        /* readable_handler will notice that this node has closed,
-                         * and will close the upstream node's output as required */
-                        event_add(wea->readable_event, NULL);
-                    }
-                }
-            }
-
-            for (int j = 0; j < (int)sa->pf->edges->length; j++) {
-                struct p4_edge *pe = p4_file_get_edge(sa->pf, j);
-                if (strcmp(pe->to, pn->id) == 0) {
-                    PRINT_DEBUG("edge %s finished after splicing %ld bytes\n",
-                           pe->id, pe->bytes_spliced);
-                }
-            }
-
-            if (sa->n_children_exited == (int)sa->pf->nodes->length) {
-                event_base_loopexit(sa->eb, NULL);
-            }
+            close_node(p, sa);
         }
         else if (WIFSIGNALED(status)) {
             PRINT_DEBUG("child was signaled by %d\n", WTERMSIG(status));

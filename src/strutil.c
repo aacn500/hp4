@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,12 +34,11 @@ int parse_argstring(struct argstruct *pa, const char *input) {
      * NB. nested blocks will not be respected.
      * Separated openblock + closeblock as they could in future be extended
      * to allow e.g. parentheses as block characters. */
-    /* TODO these should be parameters */
-    char openblock[] =  "\"'";
-    char closeblock[] = "\"'";
+    const char openblock[] =  "\"'";
+    const char closeblock[] = "\"'";
     const char delimiter = ' ';
 
-    char in_block = 0;
+    bool in_block = false;
     int block_idx = -1;
 
     int argc = 0;
@@ -52,13 +52,13 @@ int parse_argstring(struct argstruct *pa, const char *input) {
             return -1;
         }
         else if (in_block && (*token == closeblock[block_idx])) {
-            in_block = 0;
+            in_block = false;
             block_idx = -1;
             *token = delimiter;
             continue; /* avoid incrementing token */
         }
         else if (!in_block && ((block = strchr(openblock, *token)) != NULL)) {
-            in_block = 1;
+            in_block = true;
             /* get index of character which is opening block */
             block_idx = block - openblock;
             /* don't add quote mark to final string */
@@ -86,6 +86,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
         }
         ++token;
     }
+
     if (in_block) {
         REPORT_ERROR("Invalid string; block was not terminated");
         free(argv);

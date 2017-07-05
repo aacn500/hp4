@@ -15,6 +15,39 @@
 #include "parser.h"
 #include "pipe.h"
 
+int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
+    if ((*pea) == NULL) {
+        (*pea) = malloc(sizeof(*(*pea)));
+        if ((*pea) == NULL) {
+            REPORT_ERROR(strerror(errno));
+            return -1;
+        }
+        (*pea)->edges = NULL;
+        (*pea)->length = 0u;
+    }
+    if ((*pea)->length == 0u) {
+        (*pea)->edges = malloc(sizeof(*(*pea)->edges));
+        if ((*pea)->edges == NULL) {
+            REPORT_ERROR(strerror(errno));
+            return -1;
+        }
+        (*pea)->edges[0] = pe;
+        (*pea)->length = 1;
+    }
+    else {
+        (*pea)->length++;
+        struct p4_edge **newmem = realloc((*pea)->edges,
+                ((*pea)->length) * sizeof(*(*pea)->edges));
+        if (newmem == NULL) {
+            REPORT_ERROR(strerror(errno));
+            return -1;
+        }
+        (*pea)->edges = newmem;
+        (*pea)->edges[(*pea)->length - 1] = pe;
+    }
+    return 0;
+}
+
 char **parse_edge_string(const char *edge_ro) {
     char **edge_strings = malloc(2 * sizeof(*edge_strings));
     if (edge_strings == NULL) {
@@ -89,8 +122,6 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
 
     parsed_edge->bytes_spliced = 0l;
 
-    // TODO all fields are compulsory
-
     if ((json_id = json_object_get(edge, "id"))) {
         parsed_edge->id = malloc((json_string_length(json_id) + 1) * sizeof(char));
         if (parsed_edge->id == NULL) {
@@ -101,8 +132,12 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         strcpy(parsed_edge->id, json_string_value(json_id));
     }
     else {
+        REPORT_ERROR("Edge has no `id` attribute");
         parsed_edge->id = NULL;
+        json_decref(edge);
+        return -1;
     }
+
     if ((json_from = json_object_get(edge, "from"))) {
         const char *from_ro = json_string_value(json_from);
         char **from_parsed = parse_edge_string(from_ro);
@@ -129,6 +164,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         json_decref(edge);
         return -1;
     }
+
     if ((json_to = json_object_get(edge, "to"))) {
         const char *to_ro = json_string_value(json_to);
         char **to_parsed = parse_edge_string(to_ro);
@@ -155,6 +191,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         json_decref(edge);
         return -1;
     }
+
     json_decref(edge);
     return 0;
 }
@@ -336,8 +373,6 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     json_t *json_cmd;
     json_t *json_name;
 
-    // TODO id and type are compulsory
-
     if ((json_id = json_object_get(node, "id"))) {
         parsed_node->id = malloc((json_string_length(json_id)+1) * sizeof(char));
         if (parsed_node->id == NULL) {
@@ -349,6 +384,9 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     else {
         parsed_node->id = NULL;
+        REPORT_ERROR("Node has no `id` attribute");
+        json_decref(node);
+        return -1;
     }
     if ((json_type = json_object_get(node, "type"))) {
         parsed_node->type = malloc((json_string_length(json_type)+1) * sizeof(char));
@@ -362,6 +400,9 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     else {
         parsed_node->type = NULL;
+        REPORT_ERROR("Node has no `type` attribute");
+        json_decref(node);
+        return -1;
     }
     if ((json_subtype = json_object_get(node, "subtype"))) {
         parsed_node->subtype = malloc((json_string_length(json_subtype)+1) * sizeof(char));

@@ -53,6 +53,8 @@ struct p4_file {
     struct p4_node_array *nodes;
 };
 
+int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe);
+
 struct p4_node *find_node_by_id(struct p4_file *pf, const char *id);
 
 struct p4_node *find_node_by_pid(struct p4_file *pf, pid_t pid);
