@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <stdlib.h>
 
 #include <check.h>
@@ -32,6 +34,43 @@ START_TEST(test_strrep) {
             strrep("original string", "original", "longer than before"),
             "longer than before string"
     );
+}
+END_TEST
+
+START_TEST(test_parse_edge_string) {
+
+    char **result = parse_edge_string("cat");
+    ck_assert(result != NULL);
+    ck_assert_str_eq(result[0], "cat");
+    ck_assert_str_eq(result[1], STDIO_PORT);
+
+    free(result[0]);
+    free(result[1]);
+    free(result);
+
+    result = parse_edge_string("cat" PORT_DELIMITER "DOG");
+    ck_assert(result != NULL);
+    ck_assert_str_eq(result[0], "cat");
+    ck_assert_str_eq(result[1], "DOG");
+
+    free(result[0]);
+    free(result[1]);
+    free(result);
+
+    result = parse_edge_string("");
+    ck_assert(result != NULL);
+    ck_assert_str_eq(result[0], "");
+    ck_assert_str_eq(result[1], STDIO_PORT);
+
+    free(result[0]);
+    free(result[1]);
+    free(result);
+
+    result = parse_edge_string(NULL);
+    ck_assert(result == NULL);
+
+    result = parse_edge_string("cat" PORT_DELIMITER "DOG" PORT_DELIMITER "TOO_MANY_PORTS");
+    ck_assert(result == NULL);
 }
 END_TEST
 
@@ -97,6 +136,10 @@ Suite *strutil_suite(void) {
     tc_strrep = tcase_create("strrep");
     tcase_add_test(tc_strrep, test_strrep);
     suite_add_tcase(s, tc_strrep);
+
+    TCase *tc_parse_edge_string = tcase_create("parse edge string");
+    tcase_add_test(tc_parse_edge_string, test_parse_edge_string);
+    suite_add_tcase(s, tc_parse_edge_string);
 
     TCase *tc_parse_argstring = tcase_create("parse argstring");
     tcase_add_test(tc_parse_argstring, test_parse_argstring);

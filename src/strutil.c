@@ -130,6 +130,77 @@ int parse_argstring(struct argstruct *pa, const char *input) {
 }
 
 /**
+ * Returns an array of 2 _new_ strings, splitting edge_ro on PORT_DELIMITER.
+ * If there is no PORT_DELIMITER, set return[1] to STDIO_PORT.
+ * If there i more than one instance of PORT_DELIMITER, or some
+ * other error occurs, return NULL.
+ */
+char **parse_edge_string(const char *edge_ro) {
+    if (edge_ro == NULL) {
+        REPORT_ERROR("parse_edge_string called with NULL argument");
+        return NULL;
+    }
+    char **edge_strings = malloc(2 * sizeof(*edge_strings));
+    if (edge_strings == NULL) {
+        REPORT_ERROR(strerror(errno));
+        return NULL;
+    }
+    char *port_ro = strstr(edge_ro, PORT_DELIMITER);
+    if (port_ro == NULL) {
+        // Did not find any instance of PORT_DELIMITER;
+        // use STDIO_PORT, to represent std(in|out).
+        edge_strings[0] = malloc((strlen(edge_ro) + 1) * sizeof(**edge_strings));
+        if (edge_strings[0] == NULL) {
+            REPORT_ERROR(strerror(errno));
+            free(edge_strings);
+            return NULL;
+        }
+
+        edge_strings[1] = malloc((sizeof(STDIO_PORT)));
+        if (edge_strings[1] == NULL) {
+            REPORT_ERROR(strerror(errno));
+            free(edge_strings[0]);
+            free(edge_strings);
+            return NULL;
+        }
+
+        strcpy(edge_strings[0], edge_ro);
+        strcpy(edge_strings[1], STDIO_PORT);
+        return edge_strings;
+    }
+
+    // there should only be one instance of PORT_DELIMITER in the string
+    if (strstr(++port_ro, PORT_DELIMITER) != NULL) {
+        REPORT_ERROR("Found multiple instances of the same port delimiter");
+        free(edge_strings);
+        return NULL;
+    }
+    size_t id_len = port_ro - edge_ro;
+    size_t port_len = strlen(port_ro) + 1;
+
+    edge_strings[0] = malloc(id_len * sizeof(**edge_strings));
+    if (edge_strings[0] == NULL) {
+        REPORT_ERROR(strerror(errno));
+        free(edge_strings);
+        return NULL;
+    }
+
+    edge_strings[1] = malloc(port_len * sizeof(**edge_strings));
+    if (edge_strings[1] == NULL) {
+        REPORT_ERROR(strerror(errno));
+        free(edge_strings[0]);
+        free(edge_strings);
+        return NULL;
+    }
+
+    strncpy(edge_strings[0], edge_ro, id_len);
+    edge_strings[0][id_len-1] = 0;
+    strcpy(edge_strings[1], port_ro);
+
+    return edge_strings;
+}
+
+/**
  * Returns a _new_ string which is the same as `original`, except that all
  * occurrences of `replace` are replaced with `with`.
  *
