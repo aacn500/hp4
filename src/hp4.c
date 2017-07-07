@@ -113,7 +113,7 @@ int setup_out_pipes(struct p4_node *pn, struct argstruct *pa) {
                 return -1;
             }
             else if (dup2(out_pipe->write_fd, STDOUT_FILENO) < 0) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             default_stdout = false;
@@ -123,11 +123,11 @@ int setup_out_pipes(struct p4_node *pn, struct argstruct *pa) {
              * 50 bytes */
             char *out_port_fs = calloc(50u, sizeof(*out_port_fs));
             if (out_port_fs == NULL) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             if (sprintf(out_port_fs, "/proc/%u/fd/%d", ppid, out_pipe->write_fd) < 0) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             for (int n = 0; n < pa->argc; n++) {
@@ -162,7 +162,7 @@ int setup_in_pipes(struct p4_node *pn, struct argstruct *pa) {
                 return -1;
             }
             else if (dup2(in_pipe->read_fd, STDIN_FILENO) < 0) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             default_stdin = false;
@@ -172,11 +172,11 @@ int setup_in_pipes(struct p4_node *pn, struct argstruct *pa) {
              * 50 bytes */
             char *in_port_fs = calloc(50u, sizeof(*in_port_fs));
             if (in_port_fs == NULL) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             if (sprintf(in_port_fs, "/proc/%u/fd/%d", ppid, in_pipe->read_fd) < 0) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             for (int p = 0; p < pa->argc; p++) {
@@ -240,12 +240,12 @@ int setup_writable_event(struct p4_file *pf, struct p4_edge *edge, struct event_
     int write_fd = to_pipe->write_fd;
     int current_write_flags = fcntl(write_fd, F_GETFL, NULL);
     if (current_write_flags < 0) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return -1;
     }
 
     if (fcntl(write_fd, F_SETFL, current_write_flags | O_NONBLOCK) < 0) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return -1;
     }
 
@@ -280,7 +280,7 @@ int setup_events(struct p4_file *pf, struct p4_node *pn, struct event_base *eb) 
 
         struct readable_ev_args *rea = malloc(sizeof(*rea));
         if (rea == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         rea->from_pipe = from_pipe;
@@ -288,11 +288,11 @@ int setup_events(struct p4_file *pf, struct p4_node *pn, struct event_base *eb) 
         int read_fd = from_pipe->read_fd;
         int current_read_flags = fcntl(read_fd, F_GETFL, NULL);
         if (current_read_flags < 0) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         if (fcntl(read_fd, F_SETFL, current_read_flags | O_NONBLOCK) < 0) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         struct pipe_array *to_pipes = pipe_array_new();
@@ -303,7 +303,7 @@ int setup_events(struct p4_file *pf, struct p4_node *pn, struct event_base *eb) 
         ssize_t **bytes_spliced = calloc(pn->listening_edges->length,
                 sizeof(&pn->listening_edges->edges[0]->bytes_spliced));
         if (bytes_spliced == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
 
@@ -322,7 +322,7 @@ int setup_events(struct p4_file *pf, struct p4_node *pn, struct event_base *eb) 
 
         size_t *bytes_safely_written = malloc(sizeof(*bytes_safely_written));
         if (bytes_safely_written == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
 
@@ -340,7 +340,7 @@ int setup_events(struct p4_file *pf, struct p4_node *pn, struct event_base *eb) 
 
             struct writable_ev_args *wea = malloc(sizeof(*wea));
             if (wea == NULL) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
             wea->from_pipe = from_pipe;
@@ -392,7 +392,7 @@ int build_nodes(struct p4_file *pf, struct event_base *eb) {
                 return -1;
             pid_t pid = fork();
             if (pid < 0) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
             }
             else if (pid == 0) { // child
                 return run_node(pf, pn);

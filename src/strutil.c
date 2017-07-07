@@ -21,7 +21,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
 
     char *input_cpy = malloc((strlen(input) + 1) * sizeof(*input_cpy));
     if (input_cpy == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return -1;
     }
     strcpy(input_cpy, input);
@@ -74,7 +74,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
                 *token = '\0';
                 char **nargv = realloc(argv, sizeof(*argv) * ++argc);
                 if (nargv == NULL) {
-                    REPORT_ERROR(strerror(errno));
+                    REPORT_ERRORF("%s", strerror(errno));
                     free(argv);
                     free(input_cpy);
                     return -1;
@@ -97,7 +97,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
         /* do not add empty string at end of argv */
         char **nargv = realloc(argv, sizeof(*argv) * (argc + 1));
         if (nargv == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(argv);
             free(input_cpy);
             return -1;
@@ -108,7 +108,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
     else {
         char **nargv = realloc(argv, sizeof(*argv) * (++argc + 1));
         if (nargv == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(argv);
             free(input_cpy);
             return -1;
@@ -119,7 +119,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
     }
 
     if (pa == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(argv);
         free(input_cpy);
         return -1;
@@ -142,7 +142,7 @@ char **parse_edge_string(const char *edge_ro) {
     }
     char **edge_strings = malloc(2 * sizeof(*edge_strings));
     if (edge_strings == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return NULL;
     }
     char *port_ro = strstr(edge_ro, PORT_DELIMITER);
@@ -151,14 +151,14 @@ char **parse_edge_string(const char *edge_ro) {
         // use STDIO_PORT, to represent std(in|out).
         edge_strings[0] = malloc((strlen(edge_ro) + 1) * sizeof(**edge_strings));
         if (edge_strings[0] == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(edge_strings);
             return NULL;
         }
 
         edge_strings[1] = malloc((sizeof(STDIO_PORT)));
         if (edge_strings[1] == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(edge_strings[0]);
             free(edge_strings);
             return NULL;
@@ -180,14 +180,14 @@ char **parse_edge_string(const char *edge_ro) {
 
     edge_strings[0] = malloc(id_len * sizeof(**edge_strings));
     if (edge_strings[0] == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(edge_strings);
         return NULL;
     }
 
     edge_strings[1] = malloc(port_len * sizeof(**edge_strings));
     if (edge_strings[1] == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(edge_strings[0]);
         free(edge_strings);
         return NULL;
@@ -221,7 +221,7 @@ char *strrep(const char *original, const char *replace, const char *with) {
     size_t result_len = 1;
     char *result = malloc(result_len);
     if (result == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return NULL;
     }
     *result = 0;
@@ -231,7 +231,7 @@ char *strrep(const char *original, const char *replace, const char *with) {
         result_len += next - strp + strlen(with);
         newmem = realloc(result, result_len);
         if (newmem == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(result);
             return NULL;
         }
@@ -244,7 +244,7 @@ char *strrep(const char *original, const char *replace, const char *with) {
     result_len += strlen(strp);
     newmem = realloc(result, result_len);
     if (newmem == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(result);
         return NULL;
     }

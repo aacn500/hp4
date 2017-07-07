@@ -28,7 +28,7 @@ int fd_dev_null = -1;
 int open_dev_null(void) {
     fd_dev_null = open("/dev/null", O_WRONLY|O_NONBLOCK);
     if (fd_dev_null < 0)
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
     return fd_dev_null;
 }
 
@@ -44,7 +44,7 @@ void close_dev_null(void) {
 struct event_array *event_array_new(void) {
     struct event_array *ev_arr = malloc(sizeof(*ev_arr));
     if (ev_arr == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return NULL;
     }
     ev_arr->length = 0u;
@@ -56,7 +56,7 @@ int event_array_append(struct event_array *ev_arr, struct event *ev) {
     if (++ev_arr->length == 1u) {
         ev_arr->events = malloc(sizeof(*ev_arr->events));
         if (ev_arr->events == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
     }
@@ -64,7 +64,7 @@ int event_array_append(struct event_array *ev_arr, struct event *ev) {
         struct event **realloced_events = realloc(ev_arr->events,
                 ev_arr->length * sizeof(*ev_arr->events));
         if (realloced_events == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         ev_arr->events = realloced_events;
@@ -213,7 +213,7 @@ int write_single(struct writable_ev_args *wea) {
 
     if (bytes < 0) {
         if (errno != EAGAIN) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
     }
@@ -240,7 +240,7 @@ int write_multiple(struct writable_ev_args *wea) {
 
         if (bytes < 0) {
             if (errno != EAGAIN) {
-                REPORT_ERROR(strerror(errno));
+                REPORT_ERRORF("%s", strerror(errno));
                 return -1;
             }
         }
@@ -299,7 +299,7 @@ void writable_handler(evutil_socket_t fd, short what, void *arg) {
             if (bytes < 0) {
                 got_eof = 0;
                 if (errno != EAGAIN) {
-                    REPORT_ERROR(strerror(errno));
+                    REPORT_ERRORF("%s", strerror(errno));
                     return;
                 }
             }

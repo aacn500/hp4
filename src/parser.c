@@ -20,7 +20,7 @@ int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
     if ((*pea) == NULL) {
         (*pea) = malloc(sizeof(*(*pea)));
         if ((*pea) == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         (*pea)->edges = NULL;
@@ -29,7 +29,7 @@ int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
     if ((*pea)->length == 0u) {
         (*pea)->edges = malloc(sizeof(*(*pea)->edges));
         if ((*pea)->edges == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         (*pea)->edges[0] = pe;
@@ -40,7 +40,7 @@ int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
         struct p4_edge **newmem = realloc((*pea)->edges,
                 ((*pea)->length) * sizeof(*(*pea)->edges));
         if (newmem == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             return -1;
         }
         (*pea)->edges = newmem;
@@ -66,7 +66,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
     if ((json_id = json_object_get(edge, "id"))) {
         parsed_edge->id = malloc((json_string_length(json_id) + 1) * sizeof(char));
         if (parsed_edge->id == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             json_decref(edge);
             return -1;
         }
@@ -88,8 +88,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(from_parsed);
         }
         else {
-            REPORT_ERROR("");
-            fprintf(stderr, "Failed to parse `from` field in edge %s. Multiple ports?\n",
+            REPORT_ERRORF("Failed to parse `from` field in edge %s. Multiple ports?\n",
                     parsed_edge->id);
             parsed_edge->from = NULL;
             parsed_edge->from_port = NULL;
@@ -98,8 +97,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
     }
     else {
-        REPORT_ERROR("");
-        fprintf(stderr, "Edge %s has no `from` node", parsed_edge->id);
+        REPORT_ERRORF("Edge %s has no `from` node", parsed_edge->id);
         parsed_edge->from = NULL;
         parsed_edge->from_port = NULL;
         json_decref(edge);
@@ -115,8 +113,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
             free(to_parsed);
         }
         else {
-            REPORT_ERROR("");
-            fprintf(stderr, "Failed to parse `to` field in edge %s. Multiple ports?\n",
+            REPORT_ERRORF("Failed to parse `to` field in edge %s. Multiple ports?\n",
                     parsed_edge->id);
             parsed_edge->to = NULL;
             parsed_edge->to_port = NULL;
@@ -125,8 +122,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
     }
     else {
-        REPORT_ERROR("");
-        fprintf(stderr, "Edge %s has no `to` node", parsed_edge->id);
+        REPORT_ERRORF("Edge %s has no `to` node", parsed_edge->id);
         parsed_edge->to = NULL;
         parsed_edge->to_port = NULL;
         json_decref(edge);
@@ -168,14 +164,14 @@ struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
 
     struct p4_edge_array *edge_arr = malloc(sizeof(*edge_arr));
     if (edge_arr == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         json_decref(edges);
         return NULL;
     }
     edge_arr->length = length;
     edge_arr->edges = calloc(edge_arr->length, sizeof(*edge_arr->edges));
     if (edge_arr->edges == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(edge_arr);
         return NULL;
     }
@@ -183,7 +179,7 @@ struct p4_edge_array *p4_edge_array_new(json_t *edges, size_t length) {
     for (int i = 0; i < (int)edge_arr->length; i++) {
         edge_arr->edges[i] = calloc(1u, sizeof(**edge_arr->edges));
         if (edge_arr->edges[i] == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             for (int j = 0; j < i; i++) {
                 free(edge_arr->edges[j]);
             }
@@ -317,7 +313,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_id = json_object_get(node, "id"))) {
         parsed_node->id = malloc((json_string_length(json_id)+1) * sizeof(char));
         if (parsed_node->id == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             json_decref(node);
             return -1;
         }
@@ -332,7 +328,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_type = json_object_get(node, "type"))) {
         parsed_node->type = malloc((json_string_length(json_type)+1) * sizeof(char));
         if (parsed_node->type == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(parsed_node->id);
             json_decref(node);
             return -1;
@@ -348,7 +344,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_subtype = json_object_get(node, "subtype"))) {
         parsed_node->subtype = malloc((json_string_length(json_subtype)+1) * sizeof(char));
         if (parsed_node->subtype == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(parsed_node->type);
             free(parsed_node->id);
             json_decref(node);
@@ -362,7 +358,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_cmd = json_object_get(node, "cmd"))) {
         parsed_node->cmd = malloc((json_string_length(json_cmd)+1) * sizeof(char));
         if (parsed_node->cmd == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(parsed_node->subtype);
             free(parsed_node->type);
             free(parsed_node->id);
@@ -377,7 +373,7 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     if ((json_name = json_object_get(node, "name"))) {
         parsed_node->name = malloc((json_string_length(json_name)+1) * sizeof(char));
         if (parsed_node->name == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             free(parsed_node->cmd);
             free(parsed_node->subtype);
             free(parsed_node->type);
@@ -406,21 +402,19 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     /* Validate unpacked object */
     /* Subtype can only be DUMMY, and only exist when type == RAFILE */
-    int valid_subtype = (parsed_node->subtype == NULL ||
+    bool valid_subtype = (parsed_node->subtype == NULL ||
                          (strncmp(parsed_node->subtype, "DUMMY\0", 6) == 0 &&
-                          strncmp(parsed_node->type, "RAFILE\0", 7) == 0)) ? 0 : -1;
+                          strncmp(parsed_node->type, "RAFILE\0", 7) == 0));
     /* cmd must be defined iff type == EXEC */
-    int valid_cmd =
-        ((parsed_node->cmd != NULL) == (strncmp(parsed_node->type, "EXEC\0", 5) == 0)) ? 0 : -1;
+    bool valid_cmd =
+        ((parsed_node->cmd != NULL) == (strncmp(parsed_node->type, "EXEC\0", 5) == 0));
     /* name must be defined iff type == *FILE */
     const char *type_suffix = strrchr(parsed_node->type, 'F');
-    int valid_name =
-        (parsed_node->name != NULL) == (type_suffix != NULL && strncmp(type_suffix, "FILE\0", 5) == 0) ? 0 : -1;
+    bool valid_name =
+        (parsed_node->name != NULL) == (type_suffix != NULL && strncmp(type_suffix, "FILE\0", 5) == 0);
 
-    if (!(valid_subtype == 0 && valid_cmd == 0 && valid_name == 0)) {
-        fprintf(stderr, "%s\n", parsed_node->cmd);
-        fprintf(stderr, "subtype: %d, cmd: %d, name: %d\n", valid_subtype, valid_cmd, valid_name);
-        REPORT_ERROR("node was invalid");
+    if (!(valid_subtype && valid_cmd && valid_name)) {
+        REPORT_ERRORF("node %s was invalid", parsed_node->id);
         free_p4_node(parsed_node);
         parsed_node = NULL;
         json_decref(node);
@@ -441,13 +435,13 @@ struct p4_node_array *p4_node_array_new(json_t *nodes, size_t length) {
 
     struct p4_node_array *node_arr = malloc(sizeof(*node_arr));
     if (node_arr == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return NULL;
     }
     node_arr->length = length;
     node_arr->nodes = calloc(node_arr->length, sizeof(*node_arr->nodes));
     if (node_arr->nodes == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         free(node_arr);
         return NULL;
     }
@@ -455,7 +449,7 @@ struct p4_node_array *p4_node_array_new(json_t *nodes, size_t length) {
     for (int i = 0; i < (int)node_arr->length; i++) {
         node_arr->nodes[i] = calloc(1u, sizeof(**node_arr->nodes));
         if (node_arr->nodes[i] == NULL) {
-            REPORT_ERROR(strerror(errno));
+            REPORT_ERRORF("%s", strerror(errno));
             for (int j = 0; j < i; i++) {
                 free(node_arr->nodes[j]);
             }
@@ -505,7 +499,7 @@ struct p4_file *p4_file_new(const char *filename) {
 
     struct p4_file *pf = malloc(sizeof(*pf));
     if (pf == NULL) {
-        REPORT_ERROR(strerror(errno));
+        REPORT_ERRORF("%s", strerror(errno));
         return NULL;
     }
 

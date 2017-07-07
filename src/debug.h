@@ -12,9 +12,13 @@
 
 #ifndef REPORT_ERROR
 #include <stdio.h>
-#define REPORT_ERROR(what) fprintf(stderr, " ERROR: %s:%s:%d\n   %s\n", \
-                                   __FILE__, __func__, __LINE__,        \
-                                   what);
+#define REPORT_ERROR(what) fprintf(stderr, " ERROR: %s:%s:%d\n  " what "\n", \
+                                   __FILE__, __func__, __LINE__);
 #endif /* REPORT_ERROR */
+#ifndef REPORT_ERRORF
+#include <stdio.h>
+#define REPORT_ERRORF(what, ...) fprintf(stderr, " ERROR: %s:%s:%d\n  " what "\n", \
+                                         __FILE__, __func__, __LINE__, __VA_ARGS__);
+#endif /* REPORT_ERRORF */
 
 #endif /* HP4_DEBUG_H */
