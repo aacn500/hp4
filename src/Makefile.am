@@ -13,7 +13,9 @@ libhp4_a_SOURCES = debug.h \
                    stats.h \
                    stats.c \
                    strutil.h \
-                   strutil.c
+                   strutil.c \
+                   validate.h \
+                   validate.c
 
 bin_PROGRAMS = hp4
 

@@ -222,8 +222,12 @@ int run_node(struct p4_file *pf, struct p4_node *pn) {
     }
     /* TODO should stderr be closed? */
     PRINT_DEBUG("Node %s about to exec\n", pn->id);
-    execvp(pa->argv[0], pa->argv);
-    return 0;
+    int success = execvp(pa->argv[0], pa->argv);
+    if (success < 0) {
+        REPORT_ERRORF("Node %s failed to exec; is %s in PATH?", pn->id, pn->cmd);
+        exit(EXIT_FAILURE);
+    }
+    return success;
 }
 
 int setup_writable_event(struct p4_file *pf, struct p4_edge *edge, struct event_base *eb, struct readable_ev_args *rea, struct writable_ev_args *wea) {

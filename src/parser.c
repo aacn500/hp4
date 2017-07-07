@@ -15,6 +15,7 @@
 #include "parser.h"
 #include "pipe.h"
 #include "strutil.h"
+#include "validate.h"
 
 int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
     if ((*pea) == NULL) {
@@ -518,30 +519,15 @@ struct p4_file *p4_file_new(const char *filename) {
         json_decref(root);
         return NULL;
     }
+
+    if (!validate_p4_file(pf)) {
+        free_p4_file(pf);
+        json_decref(root);
+        return NULL;
+    }
+
     json_decref(root);
     return pf;
-}
-
-int validate_p4_file(struct p4_file *pf) {
-    // FIXME need to expand validations
-    for (int i = 0; i < (int)pf->nodes->length; i++) {
-        struct p4_node *node = p4_file_get_node(pf, i);
-        if (node->id == NULL) {
-            REPORT_ERROR("One or more nodes do not have an id.");
-            return 0;
-        }
-        if (node->type == NULL) {
-            fprintf(stderr, "Node %s does not have a type.\n", node->id);
-            REPORT_ERROR("");
-            return 0;
-        }
-        if (strcmp(node->type, "EXEC") == 0 && node->cmd == NULL) {
-            fprintf(stderr, "Node %s is type EXEC but does not have a cmd.\n", node->id);
-            REPORT_ERROR("");
-            return 0;
-        }
-    }
-    return 1;
 }
 
 void free_p4_file(struct p4_file *pf) {
