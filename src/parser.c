@@ -15,7 +15,6 @@
 #include "parser.h"
 #include "pipe.h"
 #include "strutil.h"
-#include "validate.h"
 
 int append_edge_to_array(struct p4_edge_array **pea, struct p4_edge *pe) {
     if ((*pea) == NULL) {
@@ -74,10 +73,7 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         strcpy(parsed_edge->id, json_string_value(json_id));
     }
     else {
-        REPORT_ERROR("Edge has no `id` attribute");
         parsed_edge->id = NULL;
-        json_decref(edge);
-        return -1;
     }
 
     if ((json_from = json_object_get(edge, "from"))) {
@@ -98,11 +94,8 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
     }
     else {
-        REPORT_ERRORF("Edge %s has no `from` node", parsed_edge->id);
         parsed_edge->from = NULL;
         parsed_edge->from_port = NULL;
-        json_decref(edge);
-        return -1;
     }
 
     if ((json_to = json_object_get(edge, "to"))) {
@@ -123,11 +116,8 @@ int parse_p4_edge(json_t *edge, struct p4_edge *parsed_edge) {
         }
     }
     else {
-        REPORT_ERRORF("Edge %s has no `to` node", parsed_edge->id);
         parsed_edge->to = NULL;
         parsed_edge->to_port = NULL;
-        json_decref(edge);
-        return -1;
     }
 
     json_decref(edge);
@@ -322,9 +312,6 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     else {
         parsed_node->id = NULL;
-        REPORT_ERROR("Node has no `id` attribute");
-        json_decref(node);
-        return -1;
     }
     if ((json_type = json_object_get(node, "type"))) {
         parsed_node->type = malloc((json_string_length(json_type)+1) * sizeof(char));
@@ -338,9 +325,6 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
     }
     else {
         parsed_node->type = NULL;
-        REPORT_ERROR("Node has no `type` attribute");
-        json_decref(node);
-        return -1;
     }
     if ((json_subtype = json_object_get(node, "subtype"))) {
         parsed_node->subtype = malloc((json_string_length(json_subtype)+1) * sizeof(char));
@@ -397,27 +381,6 @@ int parse_p4_node(json_t *node, struct p4_node *parsed_node) {
 
     parsed_node->writable_events = event_array_new();
     if (parsed_node->writable_events == NULL) {
-        json_decref(node);
-        return -1;
-    }
-
-    /* Validate unpacked object */
-    /* Subtype can only be DUMMY, and only exist when type == RAFILE */
-    bool valid_subtype = (parsed_node->subtype == NULL ||
-                         (strncmp(parsed_node->subtype, "DUMMY\0", 6) == 0 &&
-                          strncmp(parsed_node->type, "RAFILE\0", 7) == 0));
-    /* cmd must be defined iff type == EXEC */
-    bool valid_cmd =
-        ((parsed_node->cmd != NULL) == (strncmp(parsed_node->type, "EXEC\0", 5) == 0));
-    /* name must be defined iff type == *FILE */
-    const char *type_suffix = strrchr(parsed_node->type, 'F');
-    bool valid_name =
-        (parsed_node->name != NULL) == (type_suffix != NULL && strncmp(type_suffix, "FILE\0", 5) == 0);
-
-    if (!(valid_subtype && valid_cmd && valid_name)) {
-        REPORT_ERRORF("node %s was invalid", parsed_node->id);
-        free_p4_node(parsed_node);
-        parsed_node = NULL;
         json_decref(node);
         return -1;
     }
@@ -515,12 +478,6 @@ struct p4_file *p4_file_new(const char *filename) {
     }
     pf->nodes = p4_node_array_new(nodes, json_array_size(nodes));
     if (pf->nodes == NULL) {
-        free_p4_file(pf);
-        json_decref(root);
-        return NULL;
-    }
-
-    if (!validate_p4_file(pf)) {
         free_p4_file(pf);
         json_decref(root);
         return NULL;

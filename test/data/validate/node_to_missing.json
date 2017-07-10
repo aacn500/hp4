@@ -1,0 +1,26 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "save"
+        }
+    ],
+    "edges": [
+        {
+            "id": "cat-to-save",
+            "from": "cat",
+            "to": "save"
+        },
+        {
+            "id": "cat-to-missing",
+            "from": "cat",
+            "to": "missing"
+        }
+    ]
+}

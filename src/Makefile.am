@@ -1,4 +1,11 @@
+MOSTLYCLEANFILES = *.gcda *.gcno
+
 AM_CFLAGS = -Wall -Werror -Wextra -pedantic -Wno-unused-parameter
+
+if COVERAGE_ENABLED
+AM_CFLAGS += -fprofile-arcs -ftest-coverage
+AM_LDFLAGS = --coverage
+endif
 
 noinst_LIBRARIES = libhp4.a
 libhp4_includedir = $(includedir)/hp4

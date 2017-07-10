@@ -10,6 +10,10 @@
 #endif /* HP4_DEBUG */
 #endif /* PRINT_DEBUG */
 
+/* Using varargs in macro requires a value, but we often do not provide
+ * a format placeholder. To allow flexibility, have two macros,
+ * REPORT_ERROR when there are no placeholders to format,
+ * REPORT_ERRORF when we have placeholders. */
 #ifndef REPORT_ERROR
 #include <stdio.h>
 #define REPORT_ERROR(what) fprintf(stderr, " ERROR: %s:%s:%d\n  " what "\n", \

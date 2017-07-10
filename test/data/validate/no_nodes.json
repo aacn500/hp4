@@ -1,0 +1,11 @@
+{
+    "nodes": [
+    ],
+    "edges": [
+        {
+            "id": "cat-to-save",
+            "from": "cat",
+            "to": "save"
+        }
+    ]
+}

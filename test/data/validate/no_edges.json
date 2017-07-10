@@ -1,0 +1,16 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "save"
+        }
+    ],
+    "edges": [
+    ]
+}

@@ -20,6 +20,7 @@
 #include "pipe.h"
 #include "stats.h"
 #include "strutil.h"
+#include "validate.h"
 
 #define DEFAULT_INTERVAL 1000
 
@@ -489,6 +490,11 @@ int main(int argc, char **argv) {
     struct p4_file *pf = p4_file_new(args.graph_file);
     if (pf == NULL) {
         REPORT_ERROR("Failed to create new p4_file");
+        return 1;
+    }
+
+    if (!validate_p4_file(pf)) {
+        REPORT_ERROR("Graph failed validation!");
         return 1;
     }
 

@@ -1,0 +1,21 @@
+{
+    "nodes": [
+        {
+            "id": "cat",
+            "type": "EXEC",
+            "cmd": "cat space port"
+        },
+        {
+            "id": "save",
+            "type": "EXEC",
+            "cmd": "save"
+        }
+    ],
+    "edges": [
+        {
+            "id": "cat-to-save",
+            "from": "cat:space port",
+            "to": "save"
+        }
+    ]
+}

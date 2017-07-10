@@ -33,6 +33,37 @@ AC_CHECK_LIB([jansson], [json_string_length], [],
 AC_DEFINE([PORT_DELIMITER], [":"], [char which signifies start of port name])
 AC_DEFINE([STDIO_PORT], ["-"], [char which signifies port name for stdin and stdout])
 
+dnl Lifted from https://github.com/wtsi-npg/baton/blob/b295a86cb6d31a2e62c25572af13fa23cba2c3e4/configure.ac
+dnl Begin Lcov code coverage analysis
+
+dnl Be aware on OS X that gcc may not really be gcc, but a symlink to
+dnl llvm-gcc. In this case, the coverage files will not be generated
+dnl unless CC is set to the real gcc when running configure.
+
+AC_ARG_ENABLE([coverage],
+                [AS_HELP_STRING([--enable-coverage],
+                                    [Enable code coverage analysis (default is no)])],
+                                      [coverage_enabled=${enableval}], [coverage_enabled=no])
+
+AC_ARG_VAR([LCOV], [lcov code coverage analysis tool])
+AC_ARG_VAR([GENHTML], [lcov HTML reporting tool])
+
+AS_IF(
+        [test "x${coverage_enabled}" = "xyes"],
+            [AC_CHECK_LIB(gcov, __gcov_init, [], [])
+                 AC_PATH_PROG([LCOV], lcov, no)
+                      AS_IF([test "x${LCOV}" = "xno"],
+                                         [AC_MSG_ERROR(failed to find lcov for coverage analysis)],
+                                                     [])
+                           AC_PATH_PROG([GENHTML], genhtml, no)
+                                AS_IF([test "x${GENHTML}" = "xno"],
+                                                   [AC_MSG_ERROR(failed to find genhtml for coverage reporting)],
+                                                              [])],
+                                                                [])
+
+AM_CONDITIONAL(COVERAGE_ENABLED, [test "x${coverage_enabled}" = "xyes"])
+dnl End Lcov
+
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile test/Makefile])
 

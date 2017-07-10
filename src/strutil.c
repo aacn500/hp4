@@ -118,12 +118,6 @@ int parse_argstring(struct argstruct *pa, const char *input) {
         argv[argc] = NULL;
     }
 
-    if (pa == NULL) {
-        REPORT_ERRORF("%s", strerror(errno));
-        free(argv);
-        free(input_cpy);
-        return -1;
-    }
     pa->argc = argc;
     pa->argv = argv;
     return 0;
@@ -132,7 +126,7 @@ int parse_argstring(struct argstruct *pa, const char *input) {
 /**
  * Returns an array of 2 _new_ strings, splitting edge_ro on PORT_DELIMITER.
  * If there is no PORT_DELIMITER, set return[1] to STDIO_PORT.
- * If there i more than one instance of PORT_DELIMITER, or some
+ * If there is more than one instance of PORT_DELIMITER, or some
  * other error occurs, return NULL.
  */
 char **parse_edge_string(const char *edge_ro) {
